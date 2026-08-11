@@ -1,0 +1,123 @@
+Choir — a local-first music player for Android
+Copyright (C) 2026 AurielSolaris
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+================================================================================
+THIRD-PARTY MATERIAL
+================================================================================
+
+Choir incorporates and derives from third-party work. Their licences are listed
+below and are not superseded by Choir's own; the combined work is distributed
+under the GNU GPL v3, which each of the licences below permits.
+
+
+--------------------------------------------------------------------------------
+1. The Android Open Source Project — Music app          Apache License 2.0
+--------------------------------------------------------------------------------
+
+Choir began as, and remains, a port of the AOSP Music application. The following
+parts are derivative works of that code, reimplemented in Kotlin:
+
+  app/src/main/java/app/auriel/choir/core/MusicUtils.kt
+      Duration and metadata formatting, after MusicUtils.
+
+  app/src/main/java/app/auriel/choir/core/MusicLog.kt
+      Logging front-end, after MusicLog.
+
+  app/src/main/java/app/auriel/choir/data/MediaStoreRepository.kt
+      MediaStore audio, playlist and playlist-member queries, including the
+      IS_MUSIC selection and the disc/track number encoding, after the queries
+      in TrackBrowserActivity and PlaylistBrowserActivity.
+
+  app/src/main/java/app/auriel/choir/playback/PlaybackService.kt
+      Background playback service and saved-queue behaviour, after
+      MediaPlaybackService.
+
+  app/src/main/java/app/auriel/choir/ui/library/
+  app/src/main/java/app/auriel/choir/ui/detail/
+  app/src/main/java/app/auriel/choir/ui/search/
+      Browse, drill-down and search screens, after MusicBrowserActivity,
+      AlbumBrowserActivity, ArtistAlbumBrowserActivity, TrackBrowserActivity,
+      PlaylistBrowserActivity and QueryBrowserActivity.
+
+  app/src/main/java/app/auriel/choir/ui/picker/
+      Audio picker, after MusicPicker.
+
+  app/src/main/java/app/auriel/choir/ui/nowplaying/
+      Playback screen, after MediaPlaybackActivity.
+
+Original notice:
+
+    Copyright (C) 2007-2019 The Android Open Source Project
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+Apache 2.0 is one-way compatible with the GNU GPL v3: Apache-licensed material
+may be incorporated into a GPL v3 work, and the result distributed under the
+GPL v3. This is why Choir is GPL v3 and not GPL v2, which is not compatible
+with Apache 2.0.
+
+
+--------------------------------------------------------------------------------
+2. Runtime dependencies                                 Apache License 2.0
+--------------------------------------------------------------------------------
+
+Not redistributed in this source tree; resolved at build time and bundled into
+the built application.
+
+  AndroidX, Jetpack Compose, Media3/ExoPlayer, Room, Navigation
+      Copyright (C) The Android Open Source Project
+
+  Kotlin standard library and kotlinx.coroutines
+      Copyright (C) JetBrains s.r.o. and Kotlin Programming Language contributors
+
+  Koin
+      Copyright (C) Kotzilla and Koin contributors
+
+Full text: http://www.apache.org/licenses/LICENSE-2.0
+
+
+--------------------------------------------------------------------------------
+3. Bundled fonts                                        SIL Open Font License 1.1
+--------------------------------------------------------------------------------
+
+Redistributed verbatim in app/src/main/res/font/. Their licences ship inside the
+application at app/src/main/assets/licenses/.
+
+  EB Garamond
+      Copyright 2017 The EB Garamond Project Authors
+      https://github.com/octaviopardo/EBGaramond12
+      app/src/main/assets/licenses/OFL-EBGaramond.txt
+
+  Inter
+      Copyright 2020 The Inter Project Authors
+      https://github.com/rsms/inter
+      app/src/main/assets/licenses/OFL-Inter.txt
+
+The OFL permits bundling with, and distribution alongside, software under any
+licence. The fonts remain under the OFL; they are not relicensed by Choir's GPL.
+
+
+--------------------------------------------------------------------------------
+4. Icons
+--------------------------------------------------------------------------------
+
+The launcher and status-bar marks (docs/icon.svg and the vector drawables
+derived from it) are original to Choir and are covered by its GPL v3.
+
+The transport and navigation glyphs in ui/ChoirIcons.kt use path geometry from
+Google's Material Icons, released under Apache License 2.0.

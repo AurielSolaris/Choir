@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Choir — app icon (source of truth).
+
+  Two beamed eighth notes drawn as little singing faces, with a puff of song on
+  either side. Ink on paper: the palette the app itself uses.
+
+  Canvas is 108x108 to match Android's adaptive-icon grid. All artwork sits
+  inside the central 72dp keyline circle (centre 54,54 / radius 33) so nothing
+  is clipped by a round, squircle, or teardrop mask.
+
+  Android counterparts, kept in sync by hand:
+    app/src/main/res/drawable/ic_launcher_foreground.xml
+    app/src/main/res/drawable/ic_launcher_monochrome.xml
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" rx="24" fill="#F6F2E9"/>
+
+  <g fill="#1F1F1F">
+    <!-- beam + stems -->
+    <path d="M50,31 h23 a3,3 0 0 1 3,3 v4 a3,3 0 0 1 -3,3 h-23 a3,3 0 0 1 -3,-3 v-4 a3,3 0 0 1 3,-3 Z"/>
+    <path d="M48,38 h3 v30 h-3 Z"/>
+    <path d="M72,38 h3 v30 h-3 Z"/>
+
+    <!-- left note head: eyes and open mouth punched out with even-odd -->
+    <path fill-rule="evenodd" d="M33,68 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z
+                                 M36.8,65.5 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0 Z
+                                 M43.8,65.5 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0 Z
+                                 M39.7,71.5 a2.3,2.9 0 1,0 4.6,0 a2.3,2.9 0 1,0 -4.6,0 Z"/>
+
+    <!-- right note head: mouth open a little wider, because it has the high part -->
+    <path fill-rule="evenodd" d="M57,68 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z
+                                 M60.8,65.5 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0 Z
+                                 M67.8,65.5 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0 Z
+                                 M63.4,71.8 a2.6,3.3 0 1,0 5.2,0 a2.6,3.3 0 1,0 -5.2,0 Z"/>
+  </g>
+
+  <!-- song, escaping on both sides -->
+  <g fill="none" stroke="#1F1F1F" stroke-width="2.6" stroke-linecap="round">
+    <path d="M31,63 q-4,5 0,10"/>
+    <path d="M77,63 q4,5 0,10"/>
+  </g>
+</svg>

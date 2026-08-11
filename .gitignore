@@ -1,0 +1,54 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+
+# Gradle
+.gradle/
+.kotlin/
+gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Local configuration — machine-specific, never shared
+local.properties
+
+# Signing material. Losing these is bad; publishing them is worse.
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+.claude/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Working notes and reference material, not part of the distributed work.
+# The roadmap is summarised in DOCS.md for anyone reading the source comments.
+PLAN.md
+PLAN.MD
+
+# Local copies of the AOSP Music sources used while porting. They are Apache 2.0
+# and freely available upstream; there is no reason to vendor them here. See
+# NOTICE for what Choir derives from them.
+.ref/

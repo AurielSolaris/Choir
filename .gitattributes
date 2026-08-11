@@ -1,0 +1,22 @@
+# Normalise to LF in the repository. Shell scripts and the Gradle wrapper break
+# on Unix if they are checked out with CRLF, so they are pinned explicitly.
+* text=auto eol=lf
+
+gradlew     text eol=lf
+*.sh        text eol=lf
+Makefile    text eol=lf
+
+# Windows-only entry points, which want CRLF.
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Never touch binaries.
+*.png       binary
+*.jpg       binary
+*.webp      binary
+*.ttf       binary
+*.otf       binary
+*.jar       binary
+*.jks       binary
+*.keystore  binary
+*.apk       binary
