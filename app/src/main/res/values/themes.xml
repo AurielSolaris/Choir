@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The UI is entirely Compose; this theme only covers the window before the
+      first frame draws. Bars are transparent because MainActivity goes
+      edge-to-edge.
+    -->
+    <style name="Theme.Choir" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

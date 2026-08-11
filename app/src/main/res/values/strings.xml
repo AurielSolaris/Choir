@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Choir</string>
+
+    <!-- Library -->
+    <string name="library_title">Choir</string>
+    <string name="library_empty">No music found on this device.</string>
+    <string name="library_loading">Reading your library…</string>
+    <string name="library_shuffle_all">Shuffle all</string>
+
+    <plurals name="track_count">
+        <item quantity="one">%1$d track</item>
+        <item quantity="other">%1$d tracks</item>
+    </plurals>
+    <plurals name="album_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
+    <plurals name="artist_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <plurals name="playlist_count">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlists</item>
+    </plurals>
+
+    <!-- Tabs -->
+    <string name="tab_tracks">Tracks</string>
+    <string name="tab_albums">Albums</string>
+    <string name="tab_artists">Artists</string>
+    <string name="tab_playlists">Playlists</string>
+
+    <!-- Browse -->
+    <string name="albums_empty">No albums yet.</string>
+    <string name="artists_empty">No artists yet.</string>
+    <string name="playlists_empty">No playlists.\n\nAndroid no longer lets apps read playlists created elsewhere. Choir gets its own in a later version.</string>
+    <string name="playlist_empty">This playlist is empty.</string>
+
+    <!-- Picker -->
+    <string name="picker_label">Choose music</string>
+    <string name="picker_hint">Choose a track</string>
+
+    <!-- Search -->
+    <string name="search_hint">Search your library</string>
+    <string name="search_empty">Nothing matches “%1$s”.</string>
+    <string name="search_prompt">Titles, albums and artists.</string>
+    <string name="section_tracks">Tracks</string>
+    <string name="section_albums">Albums</string>
+    <string name="section_artists">Artists</string>
+
+    <!-- Permission -->
+    <string name="permission_title">Choir needs to read your music</string>
+    <string name="permission_rationale">Choir plays audio stored on this device. Nothing leaves your phone — there is no network, no account, no tracking.</string>
+    <string name="permission_grant">Grant access</string>
+    <string name="permission_denied">Access was denied. You can grant it from Android settings.</string>
+    <string name="permission_open_settings">Open settings</string>
+
+    <!-- Now playing -->
+    <string name="now_playing_title">Now playing</string>
+    <string name="now_playing_nothing">Nothing is playing</string>
+    <string name="unknown_artist">Unknown artist</string>
+    <string name="unknown_album">Unknown album</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_next">Next track</string>
+    <string name="cd_previous">Previous track</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_repeat">Repeat</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_album_art">Album art</string>
+    <string name="cd_open_now_playing">Open now playing</string>
+</resources>

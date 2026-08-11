@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- API 29-32 read audio through the storage permission; 33+ scopes it to audio only. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".ChoirApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Choir">
+
+        <!--
+          adjustResize is what makes the window report an IME inset, which is
+          what Compose's imePadding() on the search screen reads. Without it the
+          system pans instead and results hide under the keyboard.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Choir"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The audio picker other apps see. Kept out of the launcher: it is only
+          ever reached through someone else's GET_CONTENT or PICK request.
+        -->
+        <activity
+            android:name=".ui.picker.MusicPickerActivity"
+            android:exported="true"
+            android:label="@string/picker_label"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Choir"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.GET_CONTENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="vnd.android.cursor.dir/audio" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
