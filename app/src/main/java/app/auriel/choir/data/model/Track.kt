@@ -24,7 +24,22 @@ data class Track(
     val durationMs: Long,
     val trackNumber: Int,
     val year: Int,
+    /**
+     * The file's own name, `probe.wv`. Carried because it is the only reliable
+     * clue to the format for the files MediaStore's scanner could not read —
+     * those arrive typed as `application/octet-stream`.
+     */
+    val displayName: String = "",
+    val mimeType: String = "",
 ) {
+    /**
+     * False when MediaStore could not work out how long the track is, which it
+     * writes as a null duration for every format it cannot parse. Playing the
+     * file may still work; the seek bar just has nothing to scale to until the
+     * decoder reports a length of its own.
+     */
+    val hasKnownDuration: Boolean get() = durationMs > 0L
+
     val contentUri: Uri
         get() = ContentUris.withAppendedId(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,

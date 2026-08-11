@@ -5,7 +5,6 @@ package app.auriel.choir.data
 
 import app.auriel.choir.data.model.Album
 import app.auriel.choir.data.model.Artist
-import app.auriel.choir.data.model.Playlist
 import app.auriel.choir.data.model.Track
 import app.auriel.choir.data.model.inAlbumOrder
 import app.auriel.choir.data.model.toAlbums
@@ -19,21 +18,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Everything the browse screens draw from, as one consistent picture. */
+/**
+ * Everything the browse screens draw from, as one consistent picture.
+ *
+ * Playlists are deliberately absent: since v0.3.0 they are Choir's own data,
+ * held in Room and observed separately, rather than a MediaStore collection
+ * that the platform stopped answering questions about.
+ */
 data class LibrarySnapshot(
     val isLoading: Boolean = true,
     val tracks: List<Track> = emptyList(),
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),
-    val playlists: List<Playlist> = emptyList(),
 ) {
     val isEmpty: Boolean get() = !isLoading && tracks.isEmpty()
 
     fun album(id: Long): Album? = albums.firstOrNull { it.id == id }
 
     fun artist(id: Long): Artist? = artists.firstOrNull { it.id == id }
-
-    fun playlist(id: Long): Playlist? = playlists.firstOrNull { it.id == id }
 
     fun tracksOfAlbum(id: Long): List<Track> = tracks.filter { it.albumId == id }.inAlbumOrder()
 
@@ -76,17 +78,8 @@ class MusicLibrary(private val repository: MediaStoreRepository) {
                     tracks = tracks,
                     albums = tracks.toAlbums(),
                     artists = tracks.toArtists(),
-                    // Re-read alongside the tracks: a media scan can add both.
-                    playlists = repository.queryPlaylists(),
                 )
             }
         }
     }
-
-    /**
-     * Playlist contents are not part of the snapshot: they need their own query
-     * per playlist, and only matter while one is open.
-     */
-    suspend fun tracksOfPlaylist(playlistId: Long): List<Track> =
-        repository.queryPlaylistTracks(playlistId)
 }

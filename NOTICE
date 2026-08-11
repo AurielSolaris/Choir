@@ -73,7 +73,51 @@ with Apache 2.0.
 
 
 --------------------------------------------------------------------------------
-2. Runtime dependencies                                 Apache License 2.0
+2. Media3 FFmpeg audio decoder                          Apache License 2.0
+--------------------------------------------------------------------------------
+
+Redistributed verbatim, unmodified, in:
+
+  app/src/main/java/androidx/media3/decoder/ffmpeg/
+      FfmpegAudioDecoder.java, FfmpegAudioRenderer.java,
+      FfmpegDecoderException.java, FfmpegLibrary.java, package-info.java
+
+    Copyright (C) The Android Open Source Project
+
+These are carried in the source tree rather than resolved from Maven because
+Google does not publish androidx.media3:media3-decoder-ffmpeg to any repository
+— it ships only as source to be built against the NDK. They are taken from the
+androidx/media tag pinned in tools/build-ffmpeg.sh and are not modified; the
+package path is preserved so the difference from the upstream artifact is none.
+
+Also under the same licence, and also unmodified: the JNI glue (ffmpeg_jni.cc)
+and CMake build compiled into libffmpegJNI.so.
+
+
+--------------------------------------------------------------------------------
+3. FFmpeg                                               LGPL v2.1 or later
+--------------------------------------------------------------------------------
+
+Statically linked into app/src/main/jniLibs/*/libffmpegJNI.so, when a build has
+one. Not present in the source tree, and not required to build Choir.
+
+    Copyright (C) 2000-2023 the FFmpeg developers
+    https://ffmpeg.org/
+
+Built from the unmodified upstream release tagged in tools/build-ffmpeg.sh,
+configured with --disable-everything and an explicit decoder list, which
+excludes every component FFmpeg licenses under the GPL. The result is therefore
+LGPL v2.1-or-later, which the GNU GPL v3 permits incorporating.
+
+The corresponding source is the tagged upstream release, and tools/build-ffmpeg.sh
+fetches exactly it and reproduces this binary from it. Choir itself is under the
+GPL v3, so the relinking freedom the LGPL requires is already granted by the
+application's own licence — the whole application is source-available and
+modifiable.
+
+
+--------------------------------------------------------------------------------
+4. Runtime dependencies                                 Apache License 2.0
 --------------------------------------------------------------------------------
 
 Not redistributed in this source tree; resolved at build time and bundled into
@@ -92,7 +136,7 @@ Full text: http://www.apache.org/licenses/LICENSE-2.0
 
 
 --------------------------------------------------------------------------------
-3. Bundled fonts                                        SIL Open Font License 1.1
+5. Bundled fonts                                        SIL Open Font License 1.1
 --------------------------------------------------------------------------------
 
 Redistributed verbatim in app/src/main/res/font/. Their licences ship inside the
@@ -113,7 +157,7 @@ licence. The fonts remain under the OFL; they are not relicensed by Choir's GPL.
 
 
 --------------------------------------------------------------------------------
-4. Icons
+6. Icons
 --------------------------------------------------------------------------------
 
 The launcher and status-bar marks (docs/icon.svg and the vector drawables

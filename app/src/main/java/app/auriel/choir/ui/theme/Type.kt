@@ -18,9 +18,8 @@ import androidx.compose.ui.unit.sp
 import app.auriel.choir.R
 
 /**
- * Type is Choir's hierarchy. There is no accent colour to lean on (PLAN.md
- * section C), so weight, size, letter-spacing and the serif/sans split do all
- * the work:
+ * Type is Choir's hierarchy. There is no accent colour to lean on, so weight,
+ * size, letter-spacing and the serif/sans split do all the work:
  *
  *  - **EB Garamond** for content the library is *about* — track, album and
  *    artist names. An old-style serif: warm, bookish, and the closest thing to

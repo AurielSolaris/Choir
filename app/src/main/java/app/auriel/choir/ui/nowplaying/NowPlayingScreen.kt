@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -31,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,16 +45,18 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import app.auriel.choir.R
 import app.auriel.choir.core.MusicUtils
+import app.auriel.choir.playback.NowPlaying
 import app.auriel.choir.playback.PlaybackUiState
 import app.auriel.choir.ui.ChoirIcons
 import app.auriel.choir.ui.components.AlbumArt
+import app.auriel.choir.ui.library.LyricsState
 import app.auriel.choir.ui.theme.LocalChoirColors
 
 /**
  * The full-screen player: Choir's port of `MediaPlaybackActivity`.
  *
  * Art on top, metadata under it, a scrubber, then one row of transport
- * controls — the iPod-ish stack PLAN.md phase 5 builds on.
+ * controls — the iPod-ish stack the coming restyle builds on.
  */
 @Composable
 fun NowPlayingScreen(
@@ -64,10 +68,17 @@ fun NowPlayingScreen(
     onSeek: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    isLiked: Boolean,
+    onToggleLike: (() -> Unit)?,
+    lyrics: LyricsState,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChoirColors.current
     val nowPlaying = state.nowPlaying
+
+    // Whether the pane is open is the user's choice and should outlive a
+    // rotation, but not a trip back to the library.
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -94,7 +105,45 @@ fun NowPlayingScreen(
                 text = stringResource(R.string.now_playing_title),
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.muted,
+                modifier = Modifier.weight(1f),
             )
+
+            // The toggle appears only for a track that actually has words, so
+            // it explains itself and costs nothing on the tracks that do not.
+            if (lyrics.hasLyrics) {
+                Icon(
+                    imageVector = ChoirIcons.Lyrics,
+                    contentDescription = stringResource(
+                        if (showLyrics) R.string.cd_hide_lyrics else R.string.cd_show_lyrics,
+                    ),
+                    tint = colors.onBackground,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { showLyrics = !showLyrics }
+                        .padding(12.dp)
+                        .size(22.dp)
+                        .alpha(if (showLyrics) 1f else 0.45f),
+                )
+            }
+
+            // The one place the like control is always visible: there is room
+            // here, and it is where you are when you decide you want to keep a
+            // track. In lists it hides behind a long press.
+            if (onToggleLike != null) {
+                Icon(
+                    imageVector = if (isLiked) ChoirIcons.HeartFilled else ChoirIcons.Heart,
+                    contentDescription = stringResource(
+                        if (isLiked) R.string.cd_unlike else R.string.cd_like,
+                    ),
+                    tint = colors.onBackground,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggleLike)
+                        .padding(12.dp)
+                        .size(22.dp)
+                        .alpha(if (isLiked) 1f else 0.45f),
+                )
+            }
         }
 
         if (nowPlaying == null) {
@@ -108,39 +157,54 @@ fun NowPlayingScreen(
             return@Column
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            AlbumArt(
-                artworkUri = nowPlaying.artworkUri,
-                size = 320.dp,
-                modifier = Modifier.fillMaxWidth(),
+        // Reading the words should not mean losing sight of the record. The art
+        // shrinks to a thumbnail and keeps the title beside it, so the screen
+        // still says what is playing while the lyric takes the space it needs.
+        if (showLyrics && lyrics.lyrics != null) {
+            CompactTrackHeader(nowPlaying)
+            HorizontalDivider(thickness = 1.dp, color = colors.divider)
+            LyricsPane(
+                lyrics = lyrics.lyrics,
+                positionMs = state.positionMs,
+                isPlaying = state.isPlaying,
+                onSeek = onSeek,
+                modifier = Modifier.weight(1f),
             )
+        } else {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                AlbumArt(
+                    artworkUri = nowPlaying.artworkUri,
+                    size = 320.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-            Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(32.dp))
 
-            Text(
-                text = nowPlaying.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.onBackground,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = MusicUtils.makeSubtitle(nowPlaying.artist, nowPlaying.album),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.muted,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                Text(
+                    text = nowPlaying.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onBackground,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = MusicUtils.makeSubtitle(nowPlaying.artist, nowPlaying.album),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.muted,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         SeekBar(state = state, onSeek = onSeek)
@@ -157,6 +221,47 @@ fun NowPlayingScreen(
         )
 
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+/**
+ * What is playing, in one line, for when the lyric pane has taken the room the
+ * full-size artwork usually gets.
+ */
+@Composable
+private fun CompactTrackHeader(nowPlaying: NowPlaying) {
+    val colors = LocalChoirColors.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(top = 8.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AlbumArt(
+            artworkUri = nowPlaying.artworkUri,
+            size = 56.dp,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = nowPlaying.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = MusicUtils.makeSubtitle(nowPlaying.artist, nowPlaying.album),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -207,7 +312,7 @@ private fun SeekBar(state: PlaybackUiState, onSeek: (Long) -> Unit) {
                 color = colors.muted,
             )
             Text(
-                text = MusicUtils.makeTimeString(state.durationMs),
+                text = MusicUtils.makeLengthString(state.durationMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.muted,
             )

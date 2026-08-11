@@ -14,8 +14,7 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * Choir's palette: ink, paper, and the greys between them. No accent colour, by
- * design (PLAN.md section C) — hierarchy comes from [ChoirTypography] and from
- * space.
+ * design — hierarchy comes from [ChoirTypography] and from space.
  */
 data class ChoirColors(
     val background: Color,

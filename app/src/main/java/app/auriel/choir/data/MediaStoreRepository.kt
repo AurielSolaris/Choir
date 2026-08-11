@@ -15,6 +15,7 @@ import app.auriel.choir.core.MusicUtils
 import app.auriel.choir.core.Permissions
 import app.auriel.choir.data.model.Playlist
 import app.auriel.choir.data.model.Track
+import app.auriel.choir.playback.AudioFormats
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -82,8 +83,8 @@ class MediaStoreRepository(
      *
      * Expect this to be empty on Android 11 and newer: the playlist tables were
      * deprecated and then closed off to other apps' rows. Choir's own playlists
-     * arrive with Room in PLAN.md phase 4; until then this is the AOSP
-     * PlaylistBrowser behaving exactly as the platform now allows.
+     * live in Room instead; this query survives only as a way to import
+     * playlists made before the platform closed the collection off.
      */
     // Deprecated on purpose: this *is* the deprecated collection, and reading it
     // is the only way to see playlists made before the platform closed it off.
@@ -116,6 +117,44 @@ class MediaStoreRepository(
             return@withContext emptyList()
         }
         playlists
+    }
+
+    /**
+     * Every track's storage-relative path, as `Music/Album/01 Track.mp3`.
+     *
+     * Only `.m3u` import and export need this. Playback never does — it goes
+     * through content URIs — but a playlist file has to name its tracks in a
+     * way another program can recognise, and a path is the only thing the
+     * format understands.
+     */
+    suspend fun relativePaths(): Map<Long, String> = withContext(ioDispatcher) {
+        if (!Permissions.hasAudioAccess(context)) return@withContext emptyMap()
+
+        val paths = mutableMapOf<Long, String>()
+        try {
+            context.contentResolver.query(
+                COLLECTION_URI,
+                arrayOf(
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.RELATIVE_PATH,
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                ),
+                SELECTION,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val folder = cursor.getString(1).orEmpty()
+                    val name = cursor.getString(2).orEmpty()
+                    if (name.isNotBlank()) {
+                        paths[cursor.getLong(0)] = folder.trimEnd('/') + "/" + name
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            MusicLog.d(TAG, "could not read track paths: ${e.message}")
+        }
+        paths
     }
 
     /** Looks up a subset of tracks by id, used when restoring a saved queue. */
@@ -191,11 +230,21 @@ class MediaStoreRepository(
         val durationColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
         val trackColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
         val yearColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+        val nameColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+        val mimeColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
 
         while (moveToNext()) {
+            val displayName = getString(nameColumn).orEmpty()
+            val mimeType = getString(mimeColumn).orEmpty()
+
             into += Track(
                 id = getLong(idColumn),
-                title = getString(titleColumn).orEmpty().ifBlank { UNTITLED },
+                title = titleFor(
+                    storedTitle = getString(titleColumn),
+                    displayName = displayName,
+                    mimeType = mimeType,
+                    durationMs = getLong(durationColumn),
+                ),
                 artist = MusicUtils.tagOrFallback(getString(artistColumn), UNKNOWN_ARTIST),
                 artistId = getLong(artistIdColumn),
                 album = MusicUtils.tagOrFallback(getString(albumColumn), UNKNOWN_ALBUM),
@@ -204,7 +253,43 @@ class MediaStoreRepository(
                 // MediaStore encodes multi-disc albums as disc*1000 + track.
                 trackNumber = getInt(trackColumn) % 1000,
                 year = getInt(yearColumn),
+                displayName = displayName,
+                mimeType = mimeType,
             )
+        }
+    }
+
+    /**
+     * For a file the scanner could read, MediaStore's title came out of the
+     * tags and is the right thing to show.
+     *
+     * For one it could not — an AIFF, a WMA — there were no tags to read, so it
+     * falls back to the filename with the extension chopped off. That produces
+     * three rows all called "probe" out of `probe.aiff`, `probe.wma` and
+     * `probe.ac3`. Putting the extension back is the difference between a list
+     * the user can act on and one they cannot.
+     *
+     * A missing duration is the giveaway, and a better one than the format
+     * table: it means the scanner opened the file and learned nothing, whatever
+     * the extension said it should have found.
+     */
+    private fun titleFor(
+        storedTitle: String?,
+        displayName: String,
+        mimeType: String,
+        durationMs: Long,
+    ): String {
+        val title = storedTitle.orEmpty()
+        val scannerRead = durationMs > 0L && !AudioFormats.isScannerBlind(displayName, mimeType)
+        if (title.isNotBlank() && scannerRead) return title
+
+        val stem = displayName.substringBeforeLast('.', displayName)
+        return when {
+            displayName.isBlank() -> title.ifBlank { UNTITLED }
+            // Only when the "title" is the bare filename, so a properly tagged
+            // file in an exotic format keeps the name its author gave it.
+            title.isBlank() || title == stem -> displayName
+            else -> title
         }
     }
 
@@ -226,6 +311,8 @@ class MediaStoreRepository(
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.TRACK,
             MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.MIME_TYPE,
         )
 
         val TRACK_PROJECTION = arrayOf(MediaStore.Audio.Media._ID, *TRACK_COLUMNS)
@@ -238,11 +325,24 @@ class MediaStoreRepository(
 
         /**
          * `IS_MUSIC` excludes ringtones, alarms and notification sounds, exactly
-         * as the AOSP TrackBrowser did. The duration guard drops the zero-length
-         * stubs MediaStore sometimes keeps for unscannable files.
+         * as the AOSP TrackBrowser did.
+         *
+         * There used to be a `DURATION > 0` guard here too, meant to drop the
+         * empty stub rows MediaStore keeps for files it could not read. It did
+         * that, and it also silently deleted every AIFF, WMA and AC-3 track from
+         * the library — checking on device, the scanner records those with a
+         * null duration precisely *because* it cannot parse them. The guard was
+         * hiding the formats Choir most needs to show.
+         *
+         * Size does the same job without the collateral damage: a stub row for a
+         * file that no longer exists has no bytes behind it, while an unparsable
+         * album track has millions.
          */
+        /** Smaller than any real song, larger than any placeholder. */
+        const val MINIMUM_TRACK_BYTES = 4096
+
         const val SELECTION = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
-            "${MediaStore.Audio.Media.DURATION} > 0"
+            "${MediaStore.Audio.Media.SIZE} > $MINIMUM_TRACK_BYTES"
 
         const val TITLE_SORT_ORDER = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
     }
