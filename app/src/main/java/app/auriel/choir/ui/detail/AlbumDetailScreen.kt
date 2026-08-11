@@ -28,6 +28,7 @@ import app.auriel.choir.ui.components.AlbumArt
 import app.auriel.choir.ui.components.CenteredMessage
 import app.auriel.choir.ui.components.ChoirHeader
 import app.auriel.choir.ui.components.IconAction
+import app.auriel.choir.ui.components.LikeState
 import app.auriel.choir.ui.components.OrderedTrackRow
 import app.auriel.choir.ui.components.RowDivider
 import app.auriel.choir.ui.theme.LocalChoirColors
@@ -45,6 +46,7 @@ fun AlbumDetailScreen(
     onBack: () -> Unit,
     onPlay: (Int) -> Unit,
     onShuffle: () -> Unit,
+    likes: LikeState,
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
 ) {
@@ -100,6 +102,7 @@ fun AlbumDetailScreen(
                     position = if (track.trackNumber > 0) track.trackNumber else index + 1,
                     track = track,
                     onClick = { onPlay(index) },
+                    likes = likes,
                 )
                 RowDivider()
             }

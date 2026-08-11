@@ -21,6 +21,7 @@ import app.auriel.choir.R
 import app.auriel.choir.ui.components.AlbumRow
 import app.auriel.choir.ui.components.ArtistRow
 import app.auriel.choir.ui.components.CenteredMessage
+import app.auriel.choir.ui.components.LikeState
 import app.auriel.choir.ui.components.RowDivider
 import app.auriel.choir.ui.components.SearchField
 import app.auriel.choir.ui.components.SectionLabel
@@ -39,8 +40,10 @@ fun SearchScreen(
     onQueryChanged: (String) -> Unit,
     onBack: () -> Unit,
     onTrackSelected: (Int) -> Unit,
+    onTrackLongPress: (Int) -> Unit,
     onAlbumSelected: (Long) -> Unit,
     onArtistSelected: (Long) -> Unit,
+    likes: LikeState,
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
 ) {
@@ -78,7 +81,12 @@ fun SearchScreen(
                         results.tracks,
                         key = { _, track -> "track:${track.id}" },
                     ) { index, track ->
-                        TrackRow(track = track, onClick = { onTrackSelected(index) })
+                        TrackRow(
+                            track = track,
+                            onClick = { onTrackSelected(index) },
+                            onLongClick = { onTrackLongPress(index) },
+                            likes = likes,
+                        )
                         RowDivider()
                     }
                 }

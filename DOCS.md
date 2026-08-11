@@ -20,13 +20,17 @@ can be made without reading the whole tree first.
 
 ## Principles
 
-1. **Local-first.** Choir holds no network permission. Anything that would need
-   one is either out of scope or must be an explicit, user-configured opt-in.
+1. **Local-first.** Everything Choir does works with the network off. The one
+   feature that needs it — fetching lyrics — is off by default, asks only about
+   the track in front of it, and is confined to `data/lyrics/online/`. Any
+   future feature that wants the network faces the same bar: optional, explicit,
+   and honest about what it sends.
 2. **No algorithm.** No recommendations, no listening history, no telemetry.
    Curation is manual, always.
 3. **MediaStore is the truth.** The database never mirrors the library. It
-   stores only what MediaStore cannot: the queue now, liked songs and playlists
-   later.
+   stores only what MediaStore cannot: the queue and the likes now, playlists
+   later. A liked row is an id and enough tags to find that track again if
+   MediaStore renumbers it — never a copy of the track itself.
 4. **Typography over ornament.** The palette is ink and paper. Hierarchy comes
    from type and space, never from colour.
 
@@ -98,16 +102,26 @@ app/src/main/java/app/auriel/choir/
 │   ├── MediaStoreRepository.kt  every MediaStore query
 │   ├── MusicLibrary.kt          the loaded library, as a StateFlow
 │   ├── AlbumArtLoader.kt        bounded bitmap cache, no image library
-│   ├── ChoirDatabase.kt         Room
+│   ├── ChoirDatabase.kt         Room, with its migrations
 │   ├── model/
 │   │   ├── Track.kt             one audio file
 │   │   └── Collections.kt       Album/Artist/Playlist + grouping rules
+│   ├── likes/                   liked songs: entity, DAO, repository, re-linking
+│   ├── lyrics/                  LRC parsing, sidecar lookup
+│   │   ├── tags/                ID3v2 and Vorbis comment readers
+│   │   └── online/              opt-in providers, HTTP, on-disk cache
+│   ├── playlist/                Choir's own playlists, and .m3u import/export
+│   ├── settings/                preferences, and what online lyrics may do
+│   ├── TrackIdentity.kt         re-linking stored references after a rescan
 │   └── queue/                   saved-queue entities, DAO, repository
 │
 ├── playback/
 │   ├── PlaybackService.kt       MediaSessionService + ExoPlayer
 │   ├── PlaybackConnection.kt    MediaController, state mirror, position ticker
-│   └── MediaItems.kt            Track ↔ MediaItem
+│   ├── MediaItems.kt            Track ↔ MediaItem
+│   ├── AudioFormats.kt          which formats can be demuxed, decoded, played
+│   ├── ChoirRenderersFactory.kt platform decoders first, FFmpeg for the rest
+│   └── FfmpegSupport.kt         finds an FFmpeg renderer, if this build has one
 │
 ├── di/AppModule.kt              Koin graph
 │
@@ -117,11 +131,17 @@ app/src/main/java/app/auriel/choir/
     ├── theme/                   colours and typography
     ├── components/              rows, header, tabs, search field, mini player
     ├── library/                 tabbed browser + the shared ViewModel
-    ├── detail/                  album, artist, playlist drill-downs
+    ├── detail/                  album and artist drill-downs, named track lists
     ├── search/                  instant search
-    ├── nowplaying/              full player
+    ├── nowplaying/              full player and the synced lyric pane
+    ├── settings/                the one screen that changes what Choir may do
     ├── picker/                  GET_CONTENT audio picker
     └── permission/              permission gate
+
+app/src/main/java/androidx/media3/decoder/ffmpeg/
+                                Media3's FFmpeg extension, vendored verbatim
+app/src/main/jniLibs/<abi>/     libffmpegJNI.so, when a build has one
+tools/build-ffmpeg.sh           builds both of the above
 ```
 
 ### Where the AOSP code went
@@ -134,7 +154,7 @@ app/src/main/java/app/auriel/choir/
 | `TrackBrowserActivity` | `ui/library/` tracks tab |
 | `AlbumBrowserActivity` | albums tab + `ui/detail/AlbumDetailScreen.kt` |
 | `ArtistAlbumBrowserActivity` | artists tab + `ui/detail/ArtistDetailScreen.kt` |
-| `PlaylistBrowserActivity` | playlists tab + `ui/detail/PlaylistDetailScreen.kt` |
+| `PlaylistBrowserActivity` | playlists tab + `ui/detail/PlaylistScreen.kt` |
 | `QueryBrowserActivity` | `ui/search/SearchScreen.kt` |
 | `MusicPicker` | `ui/picker/` |
 | `MusicUtils`, `MusicLog` | `core/` |
@@ -182,12 +202,103 @@ the service adds only what Media3 does not have opinions about:
   playing.
 
 `PlaybackConnection` mirrors the player into a `PlaybackUiState` on every
-`Player.Events` callback, and ticks the position every 500 ms while playing —
-often enough for a live seek bar, rarely enough to be free.
+`Player.Events` callback, and ticks the position every 250 ms while playing —
+500 ms was fine for the seek bar alone but read as lag against a synced lyric.
+It also exposes a `problems` flow, so a file that will not decode produces a
+sentence naming the format rather than a tap that does nothing.
+
+That ticker is why `ChoirApp` collects `playback.state` only inside the
+Now Playing route and beside the mini player, exposing just a derived
+`isPlayingSomething` boolean at the top. Collecting it at the top level
+recomposed the whole navigation tree four times a second, which showed up as
+stutter while dragging a playlist row.
+
+The same problem exists one level down and is **not** fixed: the ticker rebuilds
+the whole `PlaybackUiState`, and a copy carrying a new position is never equal
+to the last one, so `StateFlow` conflation cannot suppress it. Now Playing
+collects that whole state, so its artwork, title and transport buttons all
+recompose on every tick although none of them changed. The fix is to give the
+position its own `StateFlow` and let only the seek bar and lyric pane follow the
+clock — which is what `LyricsPane` already does internally, holding the position
+in a `rememberUpdatedState` and reading it inside the one row whose highlight
+moved.
 
 Playing from any list queues *that* list. Tapping a track on an album queues the
 album; tapping a search result queues the results. This is what made the AOSP
 browsers feel coherent, and it is verified by checking the session queue length.
+
+---
+
+## Audio formats
+
+Playing a file needs two separate things, and almost every claim about
+"multi-format support" quietly conflates them:
+
+1. a **demuxer**, to open the container and find the audio packets, and
+2. a **decoder**, to turn those packets into samples.
+
+Media3 ships demuxers only for the containers Android cares about. Media3's
+FFmpeg extension ships decoders only. So adding FFmpeg adds codecs, and adds no
+containers at all — which is why an APE file stays unplayable on a build with
+every decoder FFmpeg has compiled in. `playback/AudioFormats.kt` keeps the two
+axes apart and reports which half is missing.
+
+Measured on a Samsung SM‑M315F, Android 16:
+
+| File | Demuxer | Decoder used | Result |
+| --- | --- | --- | --- |
+| `.flac` | `FlacExtractor` | `c2.android.flac.decoder` | plays, platform |
+| `.opus` | `OggExtractor` | `c2.android.opus.decoder` | plays, platform |
+| `.m4a` (ALAC) | `Mp4Extractor` | `ffmpegLavc60-alac` | plays, **needs FFmpeg** |
+| `.ac3` | `Ac3Extractor` | `ffmpegLavc60-ac3` | plays, **needs FFmpeg** |
+| `.aiff` | — | — | `UnrecognizedInputFormatException` |
+| `.wma` | — | — | `UnrecognizedInputFormatException` |
+| `.mka` (WavPack) | `MatroskaExtractor` | — | `No valid tracks were found` |
+| `.wv`, `.tta` | — | — | not even indexed as audio |
+
+The last two rows are the interesting failures. Matroska *is* demuxable, and the
+file still fails: Media3's Matroska extractor matches a fixed list of codec ids
+and exposes no track at all for one outside it, so the decoder is never offered
+the stream. And `.wv` and `.tta` never reach playback because the media scanner
+types them `application/octet-stream` with `media_type=0` — they are not audio
+as far as the platform is concerned, and are invisible to
+`MediaStore.Audio.Media` entirely.
+
+### What the library shows
+
+`MediaStoreRepository.SELECTION` used to require `DURATION > 0`. That silently
+deleted every AIFF, WMA and AC‑3 from the library, because the scanner writes a
+null duration for exactly the files it cannot parse. The filter is now on file
+size, which drops stub rows without dropping real songs, and:
+
+- unknown durations render as `—` rather than `0:00`,
+- a row whose "title" is only the filename stem keeps its extension, so three
+  unparsable files in one folder are told apart,
+- a track that fails to play raises a `PlaybackProblem` naming the format,
+  rather than skipping in silence.
+
+### Building the decoder
+
+`tools/build-ffmpeg.sh` downloads its own NDK, the pinned Media3 tag and the
+pinned FFmpeg tag, configures FFmpeg with `--disable-everything` plus an
+explicit decoder list, builds `libffmpegJNI.so` for the requested ABIs, strips
+it, and vendors the extension's five Java files into
+`app/src/main/java/androidx/media3/decoder/ffmpeg/`. About 2 MB per ABI.
+
+It is vendored rather than depended on because Google does not publish
+`media3-decoder-ffmpeg` to Maven. `ChoirRenderersFactory` never names those
+classes: it finds a renderer through `FfmpegSupport`, which tries the official
+class name and then the community port's, and asks the extension's own
+`FfmpegLibrary.isAvailable()` whether the native library really loaded. A build
+with no `.so` is a supported build.
+
+The mode is `EXTENSION_RENDERER_MODE_ON`, not `PREFER`. `PREFER` would route
+MP3 and AAC through software decoding for hours on a battery; `ON` leaves those
+to the hardware and calls FFmpeg only where the device has nothing.
+
+Reaching APE, WavPack and WMA needs demuxers, which is a separate piece of work:
+either hand-written Media3 `Extractor`s (AIFF is nearly trivial — IFF chunks
+around big-endian PCM) or a JNI bridge to `libavformat`.
 
 ---
 
@@ -252,19 +363,48 @@ upgrade an install signed with another — generate the real key once and keep i
 
 ## Testing
 
-Unit tests are plain JVM tests on JUnit 5, covering the logic that has rules
-rather than plumbing:
+**201 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
+`./gradlew test`, or `make test`.
 
-- `MusicUtilsTest` — duration formatting, unknown-tag fallbacks
-- `CollectionsTest` — album/artist grouping, compilation detection, album order
-- `QueueRepositoryTest` — saved-queue round trip and index clamping
+The tests are concentrated where the risk is, and the risk is not in the UI. It
+is in reading files written by other programs, over thirty years, to
+specifications that were widely ignored.
+
+| Suite | Tests | What it pins down |
+| --- | ---: | --- |
+| `data/lyrics/tags/Id3v2ReaderTest` | 18 | USLT, SYLT and TXXX frames across ID3v2.2/2.3/2.4; synchsafe sizes; unsynchronisation; UTF‑16 BOMs; descriptors with no terminator |
+| `data/lyrics/tags/VorbisCommentReaderTest` | 11 | FLAC metadata blocks, Ogg page and packet reassembly across 255-byte segment boundaries |
+| `data/lyrics/tags/ContainerReaderTest` | 24 | MP4 `©lyr` and `----` atoms, `moov` after `mdat`, streams whose `skip` does nothing, RIFF and AIFF chunk padding and byte order |
+| `data/lyrics/LrcParserTest` + `LyricsIndexTest` | 20 | simple, enhanced and A2 word-level timestamps, `[offset:]`, tenths/centis/millis, binary search for the active line |
+| `data/playlist/M3uParseTest` + `M3uResolveTest` | 17 | `.m3u` round trips, resolution by path then filename then metadata |
+| `data/playlist/PlaylistRepositoryTest` + `PlaylistTracksInTest` | 19 | ordering, renumbering after removal, refusal of incomplete reorders |
+| `data/RelinkTest` | 10 | re-linking likes and playlist members after MediaStore renumbers the library |
+| `data/lyrics/online/*ProviderTest` | 19 | request shape and response parsing for each provider, with an injected HTTP lambda — the suite never opens a socket |
+| `playback/AudioFormatsTest` | 22 | format identification from extension and MIME, and which formats can actually play |
+| `data/likes`, `data/queue`, `data/settings`, `core` | 41 | persistence, defaults, formatting |
+
+Two choices are worth knowing about.
+
+**Tag fixtures are built byte by byte in the tests**, in
+`data/lyrics/tags/TagFixtures.kt`, rather than checked in as sample files. A
+checked-in `.mp3` proves the parser handles that one file; a fixture that
+assembles a synchsafe size field proves the parser handles the rule.
+
+**The format table was written from a device, not from documentation.** Each
+entry in `AudioFormats` reflects what a Samsung SM‑M315F on Android 16 actually
+recorded after the file was pushed and rescanned, and the list of demuxers it
+claims Media3 has is the list Media3 names in its own
+`UnrecognizedInputFormatException`. `tools/` has no fixture for this because the
+check is a device check; the unit tests assert the conclusions it produced.
 
 Framework stubs return defaults (`testOptions.unitTests.isReturnDefaultValues`),
 so model classes must stay constructible without the framework loaded — this is
-why `Track` resolves its artwork URI lazily rather than at class-init.
+why `Track` resolves its artwork URI lazily rather than at class-init. It is
+also why `org.json` is a real test dependency: `android.jar`'s copy is a stub
+that returns nulls, and the lyric providers parse JSON.
 
-There are no instrumentation or Compose UI tests yet. The dependencies are
-declared; the suite belongs with the file-format work in phase 3 and later.
+Instrumentation and Compose UI dependencies are declared but the suite is thin;
+UI behaviour is currently checked on a real device.
 
 ---
 
@@ -276,8 +416,9 @@ every `ON_START`, so a grant made in Settings takes effect without a restart.
 
 **Playlists are mostly gone.** `MediaStore.Audio.Playlists` was deprecated and
 then closed to other apps' rows. On Android 11 and newer the query returns
-nothing, and the playlists tab says so plainly. Choir's own playlists arrive in
-phase 4. The deprecation warnings in `MediaStoreRepository` are suppressed
+nothing. Choir keeps its own playlists in Room; the MediaStore query survives
+only as a one-time import path for playlists made before the platform closed it
+off. The deprecation warnings in `MediaStoreRepository` are suppressed
 deliberately and locally.
 
 **Edge to edge.** The window is edge-to-edge, so lists reserve the gesture-bar
@@ -289,20 +430,18 @@ receive an inset.
 
 ## Roadmap
 
-Choir ships in phases. Comments in the source refer to these numbers.
-
 | Version | Scope |
 | --- | --- |
 | **0.1.0** ✅ | Kotlin/Compose/Media3 port. Track list, now playing, play/pause/skip/seek, media notification, saved queue. |
-| **0.2.0** ✅ | Full browse port: albums, artists, playlists, search, drill-downs, audio picker. |
-| 0.3.0 | Lyrics — embedded (USLT/SYLT/Vorbis), external `.lrc` including word-level, pluggable online providers. Liked songs in Room. |
-| 0.4.0 | FFmpeg for FLAC, Opus, WMA, APE, WavPack and friends. Folder browsing via SAF, editable playlists, `.m3u` import/export. |
+| **0.2.0** ✅ | Full browse port: albums, artists, search, drill-downs, audio picker. |
+| **0.3.0** ✅ | Lyrics from tags, sidecars and — opt in — the network. Liked songs and editable playlists in Room. FFmpeg decoding, an AIFF reader, and a library that stops hiding what the media scanner could not parse. |
+| 0.4.0 | Folder browsing via SAF. Demuxers for APE, WavPack and WMA — see [Audio formats](#audio-formats) for why a decoder alone is not enough. |
 | 0.5.0 | The real UI: iPod-style hierarchy, paper-grain texture overlay, hand-sketched icon set. |
 | 0.5.5 | Tree-shaken FFmpeg build, targeting a 60–80% smaller binary. |
 | 0.6.0 | Stabilisation, accessibility, RTL. Peer-to-peer sharing over Bluetooth/Wi-Fi Direct using a `.chmf` bundle. |
-| 1.0.0 | Production signing, F-Droid and direct APK distribution. |
+| 1.0.0 | F-Droid and direct APK distribution. |
 
-Explicit non-goals, at every phase: recommendation algorithms, ads, analytics,
+Explicit non-goals, at every version: recommendation algorithms, ads, analytics,
 tracking, and streaming integration.
 
 ---
@@ -315,9 +454,11 @@ GPL **v3** specifically, not v2: Choir derives from Apache-2.0 AOSP code, and
 Apache 2.0 is one-way compatible with GPLv3 while being incompatible with GPLv2.
 
 AGPL was considered and rejected. Its additional clause covers software users
-interact with over a network, which an offline player never is; it would add
-friction for contributors without adding protection. GPLv3 already prevents the
-thing worth preventing — a closed-source, ad-supported fork.
+interact with *over* a network — a hosted service. Choir is a client that
+occasionally makes a request; nobody ever interacts with a copy of Choir running
+on someone else's machine, so the clause would never fire. It would add friction
+for contributors without adding protection. GPLv3 already prevents the thing
+worth preventing — a closed-source, ad-supported fork.
 
 New source files carry SPDX headers:
 

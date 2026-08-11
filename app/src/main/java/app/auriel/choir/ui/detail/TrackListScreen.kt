@@ -16,28 +16,34 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.auriel.choir.R
-import app.auriel.choir.data.model.Playlist
 import app.auriel.choir.data.model.Track
 import app.auriel.choir.ui.ChoirIcons
 import app.auriel.choir.ui.components.CenteredMessage
 import app.auriel.choir.ui.components.ChoirHeader
 import app.auriel.choir.ui.components.IconAction
+import app.auriel.choir.ui.components.LikeState
 import app.auriel.choir.ui.components.OrderedTrackRow
 import app.auriel.choir.ui.components.RowDivider
 import app.auriel.choir.ui.theme.LocalChoirColors
 
 /**
- * One playlist, in the order it stores — the AOSP `PlaylistBrowser`
- * drill-down. Read-only; editing arrives with Room in PLAN.md phase 4.
+ * A named, ordered list of tracks — Choir's port of the AOSP `PlaylistBrowser`
+ * drill-down, and the screen Liked Songs reuses.
+ *
+ * Deliberately knows nothing about *where* the list came from: a MediaStore
+ * playlist, the likes table and Choir's own Room playlists are all just a title
+ * and some tracks by the time they reach here.
  */
 @Composable
-fun PlaylistDetailScreen(
-    playlist: Playlist?,
+fun TrackListScreen(
+    title: String,
     tracks: List<Track>,
     isLoading: Boolean,
+    emptyMessage: String,
     onBack: () -> Unit,
     onPlay: (Int) -> Unit,
     onShuffle: () -> Unit,
+    likes: LikeState,
     modifier: Modifier = Modifier,
     bottomPadding: Dp = 0.dp,
 ) {
@@ -49,7 +55,7 @@ fun PlaylistDetailScreen(
             .background(colors.background),
     ) {
         ChoirHeader(
-            title = playlist?.name.orEmpty(),
+            title = title,
             subtitle = if (isLoading) {
                 null
             } else {
@@ -69,18 +75,19 @@ fun PlaylistDetailScreen(
 
         when {
             isLoading -> CenteredMessage(stringResource(R.string.library_loading))
-            tracks.isEmpty() -> CenteredMessage(stringResource(R.string.playlist_empty))
+            tracks.isEmpty() -> CenteredMessage(emptyMessage)
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = bottomPadding),
             ) {
-                // Playlists may hold the same track twice, so position — not id
-                // — is what makes a row unique here.
+                // A list may hold the same track twice, so position — not id —
+                // is what makes a row unique here.
                 itemsIndexed(tracks, key = { index, track -> "$index:${track.id}" }) { index, track ->
                     OrderedTrackRow(
                         position = index + 1,
                         track = track,
                         onClick = { onPlay(index) },
+                        likes = likes,
                     )
                     RowDivider()
                 }

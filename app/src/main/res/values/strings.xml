@@ -34,8 +34,35 @@
     <!-- Browse -->
     <string name="albums_empty">No albums yet.</string>
     <string name="artists_empty">No artists yet.</string>
-    <string name="playlists_empty">No playlists.\n\nAndroid no longer lets apps read playlists created elsewhere. Choir gets its own in a later version.</string>
-    <string name="playlist_empty">This playlist is empty.</string>
+    <string name="playlist_empty">Nothing here yet.\n\nHold a track anywhere in your library and choose “Add to playlist”.</string>
+
+    <!-- Playlists -->
+    <string name="playlist_new">New playlist</string>
+    <string name="playlist_name_hint">Playlist name</string>
+    <string name="playlist_rename">Rename playlist</string>
+    <string name="playlist_delete_title">Delete this playlist?</string>
+    <string name="playlist_delete_message">“%1$s” will be removed. The tracks themselves stay where they are.</string>
+    <string name="playlist_import">Import a playlist file</string>
+    <string name="playlist_import_legacy">Import %1$d playlist from Android</string>
+    <string name="playlist_imported">Imported %1$d into “%2$s”</string>
+    <string name="playlist_imported_partial">Imported %1$d into “%2$s” — %3$d not in your library</string>
+    <string name="playlist_exported">Playlist exported</string>
+    <string name="playlist_file_failed">That file could not be read</string>
+
+    <!-- Track actions -->
+    <string name="action_like">Add to Liked Songs</string>
+    <string name="action_unlike">Remove from Liked Songs</string>
+    <string name="action_add_to_playlist">Add to playlist</string>
+    <string name="action_remove_from_playlist">Remove from this playlist</string>
+    <string name="action_create">Create</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- Liked songs -->
+    <string name="liked_songs">Liked Songs</string>
+    <string name="liked_songs_none">Nothing liked yet.</string>
+    <string name="liked_songs_hint">Hold a track to like it, or use the heart while it plays.</string>
 
     <!-- Picker -->
     <string name="picker_label">Choose music</string>
@@ -62,6 +89,61 @@
     <string name="unknown_artist">Unknown artist</string>
     <string name="unknown_album">Unknown album</string>
 
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_lyrics">Lyrics</string>
+    <string name="settings_lyrics_online">Fetch lyrics online</string>
+    <string name="settings_lyrics_online_body">Off by default. Choir reads lyrics from your files without this.</string>
+    <string name="settings_lyrics_disclosure">While this is on, Choir sends a track\'s title, artist and length to the services below when it opens a song whose file has no lyrics of its own. Nothing else is sent — no account, no identifier, no list of what you own, no record of what you play. Results are saved on this device so each track is only ever looked up once.</string>
+    <string name="settings_lyrics_unmetered">Only on unmetered connections</string>
+    <string name="settings_lyrics_unmetered_body">Never spend mobile data on lyrics.</string>
+    <string name="settings_lyrics_clear_cache">Clear saved lyrics</string>
+    <string name="settings_lyrics_cache_size">%1$d kB stored on this device</string>
+
+    <string name="provider_lrclib">LRCLIB</string>
+    <string name="provider_lrclib_body">Free, no account, no key. The only one that reliably returns synced lyrics.</string>
+    <string name="provider_musixmatch">Musixmatch</string>
+    <string name="provider_musixmatch_body">Needs your own API key. The free tier returns only part of each lyric.</string>
+    <string name="settings_lyrics_order_body">Services are asked from the top down, and the first with an answer wins. Move one up if it knows your music better.</string>
+    <string name="cd_ask_sooner">Ask this service sooner</string>
+    <string name="cd_ask_later">Ask this service later</string>
+
+    <string name="provider_netease">NetEase</string>
+    <!-- Stated plainly because it is a real caveat, not a disclaimer: this uses
+         another app's undocumented endpoints, which is why it is off by default. -->
+    <string name="provider_netease_body">Free, no key. Unofficial — it uses NetEase\'s own app endpoints, which could stop working without notice. Much the best free source for Chinese, Japanese and Korean music.</string>
+    <string name="provider_custom">Your own service</string>
+    <string name="provider_custom_body">Any HTTPS endpoint that answers with LRC or JSON.</string>
+    <string name="provider_base_url">Base URL (https://…)</string>
+    <string name="provider_api_key">API key</string>
+    <string name="provider_genius_note">Genius is not offered: its API returns a link to a song page, never the words themselves. Every app that shows Genius lyrics scrapes that page, which breaks whenever the site changes and is against their terms.</string>
+
+    <!-- Shown when a track will not play. Naming the format is the point: it
+         tells the user the file is fine and Choir is not, which is the truth. -->
+    <string name="playback_error_container">Choir can\'t open %1$s files yet</string>
+    <string name="playback_error_decoder">Nothing on this device can decode %1$s</string>
+    <string name="playback_error_file">Couldn\'t read “%1$s”</string>
+    <string name="playback_error_other">Couldn\'t play “%1$s”</string>
+
+    <string name="settings_formats">Formats</string>
+    <string name="settings_formats_decoder">FFmpeg decoder</string>
+    <string name="settings_formats_decoder_present">Included</string>
+    <string name="settings_formats_decoder_absent">Not in this build</string>
+    <!-- The distinction matters and is invisible from the outside: a decoder
+         cannot help with a container nothing can open. Saying so here is the
+         difference between a known limitation and an apparent bug. -->
+    <string name="settings_formats_body">MP3, AAC, FLAC, Vorbis, Opus and WAVE play on any Android device. The FFmpeg decoder adds the codecs yours left out, such as ALAC and Dolby. Formats like APE, WavPack and WMA need more than a decoder — Choir has no way to open those files yet, and will say so rather than fail quietly.</string>
+
+    <string name="settings_privacy">Privacy</string>
+    <string name="settings_privacy_body">Choir has no account, no analytics and no telemetry, and it never reports what you play. It does hold the internet permission, because fetching lyrics needs one — but nothing leaves this device unless you switch that on above, and then only a track\'s title, artist and length, to the service you chose.</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_licence">Licence</string>
+    <string name="settings_licence_value">GPL-3.0-or-later</string>
+    <string name="settings_source">Source</string>
+    <string name="settings_source_value">github.com/AurielSolaris/Choir</string>
+    <string name="settings_attribution">Derived from the AOSP Music app, licensed under Apache-2.0. Typeset in EB Garamond and Inter, both under the SIL Open Font License.</string>
+
     <!-- Content descriptions -->
     <string name="cd_play">Play</string>
     <string name="cd_pause">Pause</string>
@@ -74,4 +156,15 @@
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_album_art">Album art</string>
     <string name="cd_open_now_playing">Open now playing</string>
+    <string name="cd_like">Like this track</string>
+    <string name="cd_unlike">Remove from Liked Songs</string>
+    <string name="cd_liked">Liked</string>
+    <string name="cd_show_lyrics">Show lyrics</string>
+    <string name="cd_hide_lyrics">Hide lyrics</string>
+    <string name="cd_new_playlist">New playlist</string>
+    <string name="cd_rename_playlist">Rename playlist</string>
+    <string name="cd_delete_playlist">Delete playlist</string>
+    <string name="cd_export_playlist">Export playlist</string>
+    <string name="cd_reorder">Reorder</string>
+    <string name="cd_settings">Settings</string>
 </resources>

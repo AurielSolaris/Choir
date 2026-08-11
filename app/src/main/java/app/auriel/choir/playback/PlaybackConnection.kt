@@ -8,6 +8,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -19,8 +20,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -52,6 +56,34 @@ data class NowPlaying(
 )
 
 /**
+ * A track that would not play, described well enough to tell the user why.
+ *
+ * Choir shows files the media scanner could not parse — an AIFF, a WavPack —
+ * because hiding them is worse than admitting they are there. The other half of
+ * that bargain is saying something when one of them turns out to be unplayable,
+ * rather than letting a tap do nothing at all.
+ */
+data class PlaybackProblem(
+    val title: String,
+    val format: AudioFormats.Format?,
+    val reason: Reason,
+) {
+    enum class Reason {
+        /** Media3 could not open the container. */
+        UNREADABLE_CONTAINER,
+
+        /** The container opened, but nothing could decode what was inside. */
+        NO_DECODER,
+
+        /** The file itself is gone, unreadable, or damaged. */
+        UNREADABLE_FILE,
+
+        /** Something else went wrong. */
+        OTHER,
+    }
+}
+
+/**
  * The app's handle on [PlaybackService].
  *
  * Everything in the UI talks to the player through this: it owns the
@@ -66,12 +98,54 @@ class PlaybackConnection(private val context: Context) {
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
 
+    /**
+     * Emitted once per failed track. A shared flow rather than state: a problem
+     * is an event, and a rotation should not replay it.
+     */
+    private val _problems = MutableSharedFlow<PlaybackProblem>(extraBufferCapacity = 4)
+    val problems: SharedFlow<PlaybackProblem> = _problems.asSharedFlow()
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private var progressJob: Job? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = publish()
+
+        override fun onPlayerError(error: PlaybackException) {
+            // Read the item before the service's own error handler skips past it.
+            val item = controller?.currentMediaItem
+            _problems.tryEmit(
+                PlaybackProblem(
+                    title = item?.mediaMetadata?.title?.toString().orEmpty(),
+                    format = item?.audioFormat(),
+                    reason = error.reasonForUser(),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Media3's error codes, collapsed to the distinctions a listener can act on.
+     * Anything finer would be reporting an implementation detail as advice.
+     */
+    private fun PlaybackException.reasonForUser(): PlaybackProblem.Reason = when (errorCode) {
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        -> PlaybackProblem.Reason.UNREADABLE_CONTAINER
+
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        -> PlaybackProblem.Reason.NO_DECODER
+
+        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+        PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        -> PlaybackProblem.Reason.UNREADABLE_FILE
+
+        else -> PlaybackProblem.Reason.OTHER
     }
 
     fun connect() {
@@ -233,7 +307,11 @@ class PlaybackConnection(private val context: Context) {
     private companion object {
         const val TAG = "PlaybackConnection"
 
-        /** Fast enough that the seek bar looks live, slow enough to be free. */
-        const val PROGRESS_TICK_MS = 500L
+        /**
+         * Fast enough that the seek bar looks live and a synced lyric changes
+         * line on time, slow enough to be free. Half a second was fine for the
+         * scrubber alone but showed as lag against the words.
+         */
+        const val PROGRESS_TICK_MS = 250L
     }
 }

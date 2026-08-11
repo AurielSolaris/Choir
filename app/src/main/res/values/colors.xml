@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Choir is monochrome by design (see PLAN.md phase 5). These are the only
+      Choir is monochrome by design. These are the only
       two colours in the app: ink, and the paper it sits on.
     -->
     <color name="paper">#FFF6F2E9</color>

@@ -16,8 +16,10 @@ import androidx.core.content.ContextCompat
  *  - API 33+:   `READ_MEDIA_AUDIO`, plus `POST_NOTIFICATIONS` for the media
  *               notification the playback service posts
  *
- * PLAN.md phase 6 adds `MANAGE_EXTERNAL_STORAGE` for full-library scanning; for
- * v0.1.0 everything comes from MediaStore, which needs neither.
+ * Everything comes from MediaStore, which needs neither a file-tree scan nor
+ * `MANAGE_EXTERNAL_STORAGE` — a permission Choir would rather not ask for, and
+ * the reason files the media scanner refuses to index as audio stay out of
+ * reach for now.
  */
 object Permissions {
 

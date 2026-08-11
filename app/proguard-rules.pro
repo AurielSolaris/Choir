@@ -18,6 +18,19 @@
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 
+# The FFmpeg audio decoder, when a build has one. Nothing refers to these
+# classes by name — Choir finds them with Class.forName precisely so it can be
+# built without them — so R8 would otherwise see them as unreachable and delete
+# the decoder out of the APK it was just added to. Both the official extension
+# (covered by the media3 rule above) and the prebuilt community port are named
+# here; the JNI entry points must survive too, since the native library looks
+# them up by signature.
+-keep class io.github.anilbeesetti.nextlib.** { *; }
+-dontwarn io.github.anilbeesetti.nextlib.**
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
 # The service is named from the manifest and bound to by name from the app.
 -keep class app.auriel.choir.playback.PlaybackService { *; }
 

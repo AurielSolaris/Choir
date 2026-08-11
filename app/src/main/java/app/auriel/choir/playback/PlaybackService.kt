@@ -9,6 +9,8 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -56,13 +58,22 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         val exoPlayer = ExoPlayer.Builder(this)
+            // Where an FFmpeg decoder was built into this APK, this is what
+            // reaches it. Without one the factory behaves as the default did.
+            .setRenderersFactory(ChoirRenderersFactory(this))
+            // Which containers can be opened at all — a decoder is no use for a
+            // file nothing can demux.
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this, ChoirExtractorsFactory()))
             // `true` hands audio focus to the player: it ducks for navigation
             // prompts and pauses for calls without any code of ours.
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
-            .also { it.addListener(PersistenceListener()) }
+            .also {
+                it.addListener(PersistenceListener())
+                it.addAnalyticsListener(DecoderLogger())
+            }
 
         player = exoPlayer
         mediaSession = MediaSession.Builder(this, exoPlayer)
@@ -176,6 +187,35 @@ class PlaybackService : MediaSessionService() {
             shuffleEnabled = current.shuffleModeEnabled,
             repeatMode = current.repeatMode,
         )
+    }
+
+    /**
+     * Records which decoder each track actually went through.
+     *
+     * Whether a file played is easy to observe; *what played it* is not, and
+     * the two answers lead to opposite conclusions. A track that works because
+     * the phone had a hardware decoder tells you nothing about whether the
+     * FFmpeg build is doing anything, and the only honest way to tell them
+     * apart is to ask the player.
+     */
+    private inner class DecoderLogger : AnalyticsListener {
+
+        override fun onAudioDecoderInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            decoderName: String,
+            initializedTimestampMs: Long,
+            initializationDurationMs: Long,
+        ) {
+            MusicLog.i(TAG, "audio decoder: $decoderName")
+        }
+
+        override fun onAudioInputFormatChanged(
+            eventTime: AnalyticsListener.EventTime,
+            format: androidx.media3.common.Format,
+            decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+        ) {
+            MusicLog.i(TAG, "audio format: ${format.sampleMimeType} ${format.bitrate}bps")
+        }
     }
 
     private inner class PersistenceListener : Player.Listener {

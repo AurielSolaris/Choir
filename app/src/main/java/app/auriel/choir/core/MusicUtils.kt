@@ -17,6 +17,21 @@ object MusicUtils {
      * unknown durations (MediaStore reports -1) render as `0:00` rather than
      * leaking a nonsense number into the UI.
      */
+    /**
+     * A track's total length, for lists and for the right-hand end of the seek
+     * bar. Unlike [makeTimeString] this admits when it does not know.
+     *
+     * MediaStore leaves the duration null for any file its scanner could not
+     * parse — an AIFF, a WMA — and those rows are now shown rather than hidden.
+     * Printing `0:00` next to a real four-minute song would be a small lie; a
+     * dash says the same thing truthfully.
+     */
+    fun makeLengthString(durationMs: Long): String =
+        if (durationMs <= 0L) UNKNOWN_LENGTH else makeTimeString(durationMs)
+
+    /** An em dash, which is wide enough to read as "not known" rather than "zero". */
+    const val UNKNOWN_LENGTH = "—"
+
     fun makeTimeString(durationMs: Long): String {
         if (durationMs <= 0L) return "0:00"
 

@@ -34,9 +34,9 @@ data class Artist(
 )
 
 /**
- * A MediaStore playlist. Read-only in v0.2.0 — creating and editing playlists is
- * PLAN.md phase 4, where they move to Room and stop depending on a MediaStore
- * API that newer Android releases have all but retired.
+ * A MediaStore playlist, and read-only: the platform closed this collection off
+ * to other apps' rows years ago. Choir's own playlists live in Room; this type
+ * survives only to import the ones made before that happened.
  */
 data class Playlist(
     val id: Long,
