@@ -24,6 +24,34 @@ interface TrackReference {
 data class Relink(val oldTrackId: Long, val newTrackId: Long)
 
 /**
+ * The id a track found in a granted folder goes by.
+ *
+ * Everything downstream — the queue, likes, playlist members, the media id a
+ * `MediaController` sees — is keyed on a `Long`, and a file reached through a
+ * document URI has no MediaStore id to offer. Rather than teach all of that
+ * about a second kind of key, one is derived from the URI: stable across
+ * restarts because it is a pure function of the string, and *negative* because
+ * MediaStore only ever issues positive ids, so the two spaces cannot collide.
+ *
+ * FNV-1a rather than [String.hashCode] because 32 bits is not enough. At ten
+ * thousand files a 32-bit hash collides about one time in a hundred, and a
+ * collision here would mean liking one song and hearing another; at 64 bits the
+ * same library is one in fifty million.
+ */
+fun documentTrackId(documentUri: String): Long {
+    var hash = FNV_OFFSET_BASIS
+    for (byte in documentUri.toByteArray(Charsets.UTF_8)) {
+        hash = hash xor (byte.toLong() and 0xFF)
+        hash *= FNV_PRIME
+    }
+    return -(hash and Long.MAX_VALUE) - 1L
+}
+
+/** 0xcbf29ce484222325 and 0x100000001b3, as the algorithm specifies them. */
+private const val FNV_OFFSET_BASIS = -3750763034362895579L
+private const val FNV_PRIME = 1099511628211L
+
+/**
  * What makes two rows "the same track" when the id no longer agrees.
  *
  * Title, artist and length: enough to be confident in a real library, cheap to

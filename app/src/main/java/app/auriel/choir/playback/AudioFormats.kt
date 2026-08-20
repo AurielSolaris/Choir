@@ -243,25 +243,36 @@ object AudioFormats {
         Format(
             label = "Windows Media Audio",
             extensions = setOf("wma"),
-            mimeTypes = setOf("audio/x-ms-wma", "audio/x-ms-asf", "video/x-ms-asf"),
-            demuxer = Demuxer.MISSING,
+            mimeTypes = setOf(ChoirMimeTypes.AUDIO_WMA, "audio/x-ms-asf", "video/x-ms-asf"),
+            // Choir's own, in AsfExtractor.
+            demuxer = Demuxer.CHOIR,
             codec = Codec.FFMPEG,
             scannerReads = false,
+            // The extension says ASF and nothing more. Which of five codecs is
+            // inside is settled by a tag in the header, so the file has to be
+            // opened before there is an honest answer about whether it plays.
+            note = "WMA, WMA Pro, Lossless and Voice; DRM-protected files are not supported",
         ),
         Format(
             label = "Monkey's Audio",
             extensions = setOf("ape"),
-            mimeTypes = setOf("audio/x-ape", "audio/ape", "audio/x-monkeys-audio"),
-            demuxer = Demuxer.MISSING,
+            mimeTypes = setOf(ChoirMimeTypes.AUDIO_APE, "audio/ape", "audio/x-monkeys-audio"),
+            // Choir's own, in ApeExtractor.
+            demuxer = Demuxer.CHOIR,
             codec = Codec.FFMPEG,
             scannerReads = false,
         ),
         Format(
             label = "WavPack",
             extensions = setOf("wv"),
-            mimeTypes = setOf("audio/x-wavpack", "audio/wavpack"),
-            demuxer = Demuxer.MISSING,
+            mimeTypes = setOf(ChoirMimeTypes.AUDIO_WAVPACK, "audio/wavpack"),
+            // Choir's own, in WavPackExtractor. The decoder was already in the
+            // FFmpeg build; this is the half that was missing.
+            demuxer = Demuxer.CHOIR,
             codec = Codec.FFMPEG,
+            // Worse than unread: the scanner files a .wv as plain data with
+            // media_type 0, so MediaStore.Audio never lists it at all. Reaching
+            // one means browsing a folder the user granted.
             scannerReads = false,
         ),
         Format(

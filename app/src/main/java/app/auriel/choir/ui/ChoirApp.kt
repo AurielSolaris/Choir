@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import android.net.Uri
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +36,7 @@ import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import app.auriel.choir.R
+import app.auriel.choir.data.folders.FolderRoot
 import app.auriel.choir.data.model.Track
 import app.auriel.choir.data.playlist.PlaylistSummary
 import app.auriel.choir.playback.PlaybackConnection
@@ -51,6 +53,8 @@ import app.auriel.choir.ui.detail.AlbumDetailScreen
 import app.auriel.choir.ui.detail.ArtistDetailScreen
 import app.auriel.choir.ui.detail.PlaylistScreen
 import app.auriel.choir.ui.detail.TrackListScreen
+import app.auriel.choir.ui.folders.FolderScreen
+import app.auriel.choir.ui.library.FolderResult
 import app.auriel.choir.ui.library.LibraryScreen
 import app.auriel.choir.ui.library.LibraryViewModel
 import app.auriel.choir.ui.library.PlaylistFileResult
@@ -72,14 +76,23 @@ private object Routes {
     const val ALBUM_ID = "albumId"
     const val ARTIST_ID = "artistId"
     const val PLAYLIST_ID = "playlistId"
+    const val FOLDER_PATH = "folderPath"
 
     const val ALBUM = "album/{$ALBUM_ID}"
     const val ARTIST = "artist/{$ARTIST_ID}"
     const val PLAYLIST = "playlist/{$PLAYLIST_ID}"
+    const val FOLDER = "folder/{$FOLDER_PATH}"
 
     fun album(id: Long) = "album/$id"
     fun artist(id: Long) = "artist/$id"
     fun playlist(id: Long) = "playlist/$id"
+
+    /**
+     * A folder is addressed by its path rather than by an id, because it has
+     * no id worth having: the tree is rebuilt on every rescan, and a path is
+     * the one thing about a folder that survives that.
+     */
+    fun folder(path: String) = "folder/${Uri.encode(path)}"
 }
 
 /**
@@ -127,6 +140,13 @@ private fun ChoirNavigation(
     var namingPlaylist by remember { mutableStateOf<PlaylistPrompt?>(null) }
     var deletingPlaylist by remember { mutableStateOf<PlaylistSummary?>(null) }
     var exportTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var removingFolder by remember { mutableStateOf<FolderRoot?>(null) }
+
+    // The system picker, which is the only way Choir ever sees a folder: the
+    // grant it returns covers that subtree and nothing else.
+    val folderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> uri?.let(viewModel::addFolder) }
 
     val importLauncher = rememberLauncherForActivityResult(
         // Not by MIME type: .m3u is reported as anything from audio/x-mpegurl
@@ -167,6 +187,8 @@ private fun ChoirNavigation(
                 val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
                 val likedTracks by viewModel.likedTracks.collectAsStateWithLifecycle()
                 val legacyCount by viewModel.legacyPlaylistCount.collectAsStateWithLifecycle()
+                val folderRoots by viewModel.folderRoots.collectAsStateWithLifecycle()
+                val rootFolder = snapshot.folders
 
                 LibraryScreen(
                     snapshot = snapshot,
@@ -183,10 +205,19 @@ private fun ChoirNavigation(
                     onTrackLongPress = { index ->
                         snapshot.tracks.getOrNull(index)?.let { actionTarget = TrackTarget(it) }
                     },
+                    onFolderSelected = { navController.navigateOnce(Routes.folder(it)) },
+                    onFolderTrackSelected = { viewModel.play(rootFolder.tracks, it) },
+                    onFolderTrackLongPress = { index ->
+                        rootFolder.tracks.getOrNull(index)?.let { actionTarget = TrackTarget(it) }
+                    },
+                    onAddFolder = { folderLauncher.launch(null) },
+                    onRescanFolders = viewModel::rescanFolders,
+                    onRemoveFolder = { removingFolder = it },
                     onNewPlaylist = { namingPlaylist = PlaylistPrompt() },
                     onImportFile = { importLauncher.launch(arrayOf("*/*")) },
                     onImportLegacy = viewModel::importLegacyPlaylists,
                     playlists = playlists,
+                    folderRoots = folderRoots,
                     legacyPlaylistCount = legacyCount,
                     likes = likes,
                     likedCount = likedTracks.size,
@@ -278,6 +309,30 @@ private fun ChoirNavigation(
                     onExport = {
                         exportTracks = tracks
                         exportLauncher.launch("${open.name}.m3u")
+                    },
+                    likes = likes,
+                    bottomPadding = listBottomPadding,
+                )
+            }
+
+            composable(
+                route = Routes.FOLDER,
+                arguments = listOf(navArgument(Routes.FOLDER_PATH) { type = NavType.StringType }),
+            ) { entry ->
+                val path = entry.arguments?.getString(Routes.FOLDER_PATH).orEmpty()
+                val folder = snapshot.folder(path)
+                val tracks = folder?.tracks.orEmpty()
+
+                FolderScreen(
+                    folder = folder,
+                    onBack = navController::popBackStack,
+                    onOpenFolder = { navController.navigateOnce(Routes.folder(it)) },
+                    onPlay = { viewModel.play(tracks, it) },
+                    // Everything below here, not just this level: "shuffle this
+                    // folder" means the album and its two disc subfolders.
+                    onShuffle = { folder?.let { viewModel.shuffle(it.allTracks()) } },
+                    onTrackLongPress = { index ->
+                        tracks.getOrNull(index)?.let { actionTarget = TrackTarget(it) }
                     },
                     likes = likes,
                     bottomPadding = listBottomPadding,
@@ -439,6 +494,26 @@ private fun ChoirNavigation(
             )
         }
 
+        removingFolder?.let { root ->
+            ConfirmDialog(
+                title = stringResource(R.string.folder_remove_title),
+                message = stringResource(R.string.folder_remove_message, root.name),
+                confirmLabel = stringResource(R.string.folder_remove),
+                cancelLabel = stringResource(R.string.action_cancel),
+                onConfirm = {
+                    viewModel.removeFolder(root.treeUri)
+                    removingFolder = null
+                },
+                onDismiss = { removingFolder = null },
+            )
+        }
+
+        // One line of feedback for a folder that was granted, then gone.
+        val folderResult by viewModel.folderResult.collectAsStateWithLifecycle()
+        folderResult?.let { result ->
+            Toast(message = result.message(), onShown = viewModel::clearFolderResult)
+        }
+
         // One line of feedback for an import or export, then gone.
         val fileResult by viewModel.fileResult.collectAsStateWithLifecycle()
         fileResult?.let { result ->
@@ -492,6 +567,12 @@ private data class PlaylistPrompt(
     val name: String = "",
     val pendingTracks: List<Track> = emptyList(),
 )
+
+@Composable
+private fun FolderResult.message(): String = when (this) {
+    is FolderResult.Added -> stringResource(R.string.folder_added, name)
+    FolderResult.Failed -> stringResource(R.string.folder_add_failed)
+}
 
 @Composable
 private fun PlaylistFileResult.message(): String = when (this) {

@@ -149,6 +149,21 @@ public final class FfmpegLibrary {
         return "pcm_mulaw";
       case MimeTypes.AUDIO_ALAW:
         return "pcm_alaw";
+        // Choir's additions, for the containers it demuxes itself. Media3 has
+        // no MimeTypes constant for these because it has no extractor for them;
+        // the strings are ChoirMimeTypes, and the two must agree.
+      case "audio/x-wavpack":
+        return "wavpack";
+      case "audio/x-ape":
+        return "ape";
+      case "audio/x-ms-wma":
+        return "wmav2";
+      case "audio/x-ms-wmapro":
+        return "wmapro";
+      case "audio/x-ms-wmalossless":
+        return "wmalossless";
+      case "audio/x-ms-wmavoice":
+        return "wmavoice";
       case MimeTypes.VIDEO_H264:
         return "h264";
       case MimeTypes.VIDEO_H265:

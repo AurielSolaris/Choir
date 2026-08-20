@@ -127,35 +127,10 @@ class MediaStoreRepository(
      * way another program can recognise, and a path is the only thing the
      * format understands.
      */
-    suspend fun relativePaths(): Map<Long, String> = withContext(ioDispatcher) {
-        if (!Permissions.hasAudioAccess(context)) return@withContext emptyMap()
-
-        val paths = mutableMapOf<Long, String>()
-        try {
-            context.contentResolver.query(
-                COLLECTION_URI,
-                arrayOf(
-                    MediaStore.Audio.Media._ID,
-                    MediaStore.Audio.Media.RELATIVE_PATH,
-                    MediaStore.Audio.Media.DISPLAY_NAME,
-                ),
-                SELECTION,
-                null,
-                null,
-            )?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    val folder = cursor.getString(1).orEmpty()
-                    val name = cursor.getString(2).orEmpty()
-                    if (name.isNotBlank()) {
-                        paths[cursor.getLong(0)] = folder.trimEnd('/') + "/" + name
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            MusicLog.d(TAG, "could not read track paths: ${e.message}")
-        }
-        paths
-    }
+    suspend fun relativePaths(): Map<Long, String> =
+        queryTracks()
+            .filter { it.displayName.isNotBlank() }
+            .associate { it.id to it.path }
 
     /** Looks up a subset of tracks by id, used when restoring a saved queue. */
     suspend fun tracksByIds(ids: List<Long>): List<Track> {
@@ -232,6 +207,10 @@ class MediaStoreRepository(
         val yearColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
         val nameColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
         val mimeColumn = getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+        // Not thrown on: the playlist-members view mirrors the audio columns,
+        // but it is the platform's deprecated table and OEM builds have been
+        // known to drop one. A track with no folder simply sorts to the root.
+        val pathColumn = getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
 
         while (moveToNext()) {
             val displayName = getString(nameColumn).orEmpty()
@@ -255,8 +234,19 @@ class MediaStoreRepository(
                 year = getInt(yearColumn),
                 displayName = displayName,
                 mimeType = mimeType,
+                relativePath = folderOf(if (pathColumn >= 0) getString(pathColumn) else null),
             )
         }
+    }
+
+    /**
+     * `RELATIVE_PATH` as the folder tree wants it: `Music/Nick Drake/`, with
+     * one trailing slash and no leading one. MediaStore is usually already in
+     * that shape, but not on every volume and not on every OEM build.
+     */
+    private fun folderOf(relativePath: String?): String {
+        val path = relativePath.orEmpty().trim().trim('/')
+        return if (path.isEmpty()) "" else "$path/"
     }
 
     /**
@@ -313,6 +303,7 @@ class MediaStoreRepository(
             MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.RELATIVE_PATH,
         )
 
         val TRACK_PROJECTION = arrayOf(MediaStore.Audio.Media._ID, *TRACK_COLUMNS)

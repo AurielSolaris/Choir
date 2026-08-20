@@ -106,13 +106,16 @@ app/src/main/java/app/auriel/choir/
 │   ├── model/
 │   │   ├── Track.kt             one audio file
 │   │   └── Collections.kt       Album/Artist/Playlist + grouping rules
+│   │   └── Folders.kt           the folder tree, built from granted documents
 │   ├── likes/                   liked songs: entity, DAO, repository, re-linking
 │   ├── lyrics/                  LRC parsing, sidecar lookup
 │   │   ├── tags/                ID3v2 and Vorbis comment readers
 │   │   └── online/              opt-in providers, HTTP, on-disk cache
+│   ├── folders/                 SAF trees, scanning, and the files in them
 │   ├── playlist/                Choir's own playlists, and .m3u import/export
 │   ├── settings/                preferences, and what online lyrics may do
 │   ├── TrackIdentity.kt         re-linking stored references after a rescan
+│   ├── TrackResolver.kt         a track by id, from MediaStore or a folder
 │   └── queue/                   saved-queue entities, DAO, repository
 │
 ├── playback/
@@ -120,6 +123,13 @@ app/src/main/java/app/auriel/choir/
 │   ├── PlaybackConnection.kt    MediaController, state mirror, position ticker
 │   ├── MediaItems.kt            Track ↔ MediaItem
 │   ├── AudioFormats.kt          which formats can be demuxed, decoded, played
+│   ├── ChoirMimeTypes.kt        MIME types Media3 has no constant for
+│   ├── ChoirCodecContext.kt     codec fields Media3's Format cannot carry
+│   ├── ChoirExtractorsFactory.kt Media3's extractors, plus the four below
+│   ├── AiffExtractor.kt         IFF chunks around big-endian PCM
+│   ├── WavPackExtractor.kt      self-describing blocks, scanned for
+│   ├── ApeExtractor.kt          a seek table at the front, exact seeking
+│   ├── AsfExtractor.kt          fixed-size packets, blocks reassembled
 │   ├── ChoirRenderersFactory.kt platform decoders first, FFmpeg for the rest
 │   └── FfmpegSupport.kt         finds an FFmpeg renderer, if this build has one
 │
@@ -135,13 +145,16 @@ app/src/main/java/app/auriel/choir/
     ├── search/                  instant search
     ├── nowplaying/              full player and the synced lyric pane
     ├── settings/                the one screen that changes what Choir may do
+    ├── folders/                 browsing by directory, through SAF
     ├── picker/                  GET_CONTENT audio picker
     └── permission/              permission gate
 
 app/src/main/java/androidx/media3/decoder/ffmpeg/
-                                Media3's FFmpeg extension, vendored verbatim
+                                Media3's FFmpeg extension, vendored — two of
+                                the five files carry Choir additions, marked
 app/src/main/jniLibs/<abi>/     libffmpegJNI.so, when a build has one
 tools/build-ffmpeg.sh           builds both of the above
+tools/ffmpeg-jni-context.inc    a JNI entry point the build appends to Media3's
 ```
 
 ### Where the AOSP code went
@@ -239,11 +252,12 @@ Playing a file needs two separate things, and almost every claim about
 
 Media3 ships demuxers only for the containers Android cares about. Media3's
 FFmpeg extension ships decoders only. So adding FFmpeg adds codecs, and adds no
-containers at all — which is why an APE file stays unplayable on a build with
+containers at all — which is why an APE file stayed unplayable on a build with
 every decoder FFmpeg has compiled in. `playback/AudioFormats.kt` keeps the two
 axes apart and reports which half is missing.
 
-Measured on a Samsung SM‑M315F, Android 16:
+Measured on a Samsung SM‑M315F, Android 16, before v0.4.0 supplied the missing
+demuxers:
 
 | File | Demuxer | Decoder used | Result |
 | --- | --- | --- | --- |
@@ -262,7 +276,66 @@ and exposes no track at all for one outside it, so the decoder is never offered
 the stream. And `.wv` and `.tta` never reach playback because the media scanner
 types them `application/octet-stream` with `media_type=0` — they are not audio
 as far as the platform is concerned, and are invisible to
-`MediaStore.Audio.Media` entirely.
+`MediaStore.Audio.Media` entirely. Reaching one means browsing a folder the user
+granted, which is the other half of what v0.4.0 added.
+
+### The demuxers Choir writes
+
+Four containers now have a hand-written Media3 `Extractor` in `playback/`, added
+to Media3's own list by `ChoirExtractorsFactory` — appended, not prepended, so
+Media3's extractors keep first refusal on the formats they own.
+
+| Extractor | Container | How a frame is found | Seeking |
+| --- | --- | --- | --- |
+| `AiffExtractor` | AIFF, AIFC | IFF chunk walk | by byte offset, exact |
+| `WavPackExtractor` | WavPack | 32-byte block header, scanned for | estimate, corrected on arrival |
+| `ApeExtractor` | Monkey's Audio | seek table read up front | **exact** |
+| `AsfExtractor` | ASF (`.wma`) | fixed-size packets | packet boundary, corrected |
+
+They are as different as the formats are. WavPack blocks describe themselves and
+can be picked up anywhere in the file, so a lost boundary is recoverable by
+scanning; APE frames carry no sync word at all, so its header and seek table are
+everything and a damaged one ends the file. ASF is neither — a streaming
+container whose audio is cut across fixed-size packets, so a block larger than
+the space left in a packet is split and has to be sewn back together before the
+decoder sees it.
+
+Only AIFF needs no decoder. The other three carry compressed audio that reaches
+FFmpeg, which is where the second half of the problem is.
+
+### What the decoder has to be told
+
+Media3's FFmpeg extension opens a codec from a `Format`: MIME type, sample rate,
+channel count, extradata. That is sufficient for every codec Media3 has a
+demuxer for, because each of those reads its own parameters out of its
+extradata. The ones reached here do not:
+
+- `wmadec` refuses to open without `block_align`, and derives its coefficient
+  tables from `bit_rate`. Given neither, a sound file fails to open — or opens
+  and decodes to silence.
+- `apedec` picks its output sample format from `bits_per_coded_sample`, and
+  treats a zero as an unsupported depth rather than as "unstated".
+
+Media3's `Format` has nowhere to put any of the three, and its JNI applies its
+sample rate and channel count only to raw PCM. So:
+
+- `ChoirCodecContext` encodes the three numbers into sixteen bytes that ride
+  along as a second entry in `initializationData`, behind the codec extradata,
+- `FfmpegAudioDecoder` (vendored, and marked "Choir's addition") reads them back
+  and calls `ffmpegInitializeContext`,
+- `tools/ffmpeg-jni-context.inc` is that function, appended to Media3's
+  `ffmpeg_jni.cc` by the build script.
+
+It is a *second* entry point rather than a change to `ffmpegInitialize`, and the
+Java side catches `UnsatisfiedLinkError` and falls back. A `libffmpegJNI.so`
+built before this existed keeps working for ALAC and Dolby instead of failing to
+link; APE and WMA are the only things it cannot do, which is what it could not
+do anyway.
+
+**This means `.ape` and `.wma` need `tools/build-ffmpeg.sh` re-run.** The
+demuxers work without it — the container opens, the format is published, the
+packets are correct — and then the decoder declines to initialise. `.wv` is
+unaffected: WavPack's decoder needs nothing beyond its packets.
 
 ### What the library shows
 
@@ -296,9 +369,16 @@ The mode is `EXTENSION_RENDERER_MODE_ON`, not `PREFER`. `PREFER` would route
 MP3 and AAC through software decoding for hours on a battery; `ON` leaves those
 to the hardware and calls FFmpeg only where the device has nothing.
 
-Reaching APE, WavPack and WMA needs demuxers, which is a separate piece of work:
-either hand-written Media3 `Extractor`s (AIFF is nearly trivial — IFF chunks
-around big-endian PCM) or a JNI bridge to `libavformat`.
+The script also appends `tools/ffmpeg-jni-context.inc` to Media3's
+`ffmpeg_jni.cc` before building, and skips copying back the two Java files that
+carry Choir's additions. Appended rather than patched: a unified diff would have
+to match context lines in a file upstream is free to reformat between releases,
+and would fail the whole build the day it did.
+
+Moving to a newer Media3 tag means re-applying the additions in `FfmpegLibrary`
+(MIME type to codec name) and `FfmpegAudioDecoder` (the codec context) by hand.
+Both are marked `Choir's addition` in the source, and `tools/build-ffmpeg.sh`
+names them.
 
 ---
 
@@ -363,7 +443,7 @@ upgrade an install signed with another — generate the real key once and keep i
 
 ## Testing
 
-**201 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
+**367 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
 `./gradlew test`, or `make test`.
 
 The tests are concentrated where the risk is, and the risk is not in the UI. It
@@ -372,23 +452,36 @@ specifications that were widely ignored.
 
 | Suite | Tests | What it pins down |
 | --- | ---: | --- |
+| `playback/AsfExtractorTest` | 24 | ASF objects and packet payload parsing — optional fields at four widths, blocks reassembled across packets, compressed payloads, error correction stepped over |
+| `playback/ApeExtractorTest` | 22 | both header layouts, the seek table, frame alignment on the four-byte grid, and the prefix FFmpeg's decoder expects |
+| `playback/WavPack*Test` | 23 | block headers, sub-blocks, multichannel frames, resynchronisation after a seek |
+| `playback/Aiff*`, `SwapSampleBytes`, `ExtendedFloat` | 18 | IFF chunk padding, byte order, and the 80-bit float a sample rate is stored as |
+| `playback/AudioFormatsTest` | 26 | format identification from extension and MIME, and which formats can actually play |
+| `playback/ChoirCodecContextTest` | 5 | the sixteen bytes the extractors write and the vendored decoder reads |
 | `data/lyrics/tags/Id3v2ReaderTest` | 18 | USLT, SYLT and TXXX frames across ID3v2.2/2.3/2.4; synchsafe sizes; unsynchronisation; UTF‑16 BOMs; descriptors with no terminator |
 | `data/lyrics/tags/VorbisCommentReaderTest` | 11 | FLAC metadata blocks, Ogg page and packet reassembly across 255-byte segment boundaries |
-| `data/lyrics/tags/ContainerReaderTest` | 24 | MP4 `©lyr` and `----` atoms, `moov` after `mdat`, streams whose `skip` does nothing, RIFF and AIFF chunk padding and byte order |
-| `data/lyrics/LrcParserTest` + `LyricsIndexTest` | 20 | simple, enhanced and A2 word-level timestamps, `[offset:]`, tenths/centis/millis, binary search for the active line |
-| `data/playlist/M3uParseTest` + `M3uResolveTest` | 17 | `.m3u` round trips, resolution by path then filename then metadata |
-| `data/playlist/PlaylistRepositoryTest` + `PlaylistTracksInTest` | 19 | ordering, renumbering after removal, refusal of incomplete reorders |
-| `data/RelinkTest` | 10 | re-linking likes and playlist members after MediaStore renumbers the library |
-| `data/lyrics/online/*ProviderTest` | 19 | request shape and response parsing for each provider, with an injected HTTP lambda — the suite never opens a socket |
-| `playback/AudioFormatsTest` | 22 | format identification from extension and MIME, and which formats can actually play |
-| `data/likes`, `data/queue`, `data/settings`, `core` | 41 | persistence, defaults, formatting |
+| `data/lyrics/tags/Mp4ReaderTest` + `IffReaderTest` | 24 | MP4 `©lyr` and `----` atoms, `moov` after `mdat`, streams whose `skip` does nothing, RIFF and AIFF chunk padding and byte order |
+| `data/lyrics/Lrc*`, `WordTiming`, `SungUpTo` | 34 | simple, enhanced and A2 word-level timestamps, `[offset:]`, tenths/centis/millis, binary search for the active line |
+| `data/lyrics/online/*ProviderTest` | 32 | request shape and response parsing for each provider, with an injected HTTP lambda — the suite never opens a socket |
+| `data/playlist/*` | 36 | `.m3u` round trips, resolution by path then filename then metadata, ordering, renumbering, refusal of incomplete reorders |
+| `data/folders/*` + `data/model/FolderTreeTest` | 30 | SAF document paths, tree building, `.nomedia`, and the files the media scanner never indexed |
+| `data/RelinkTest` + `TrackResolverTest` | 16 | re-linking likes and playlist members after MediaStore renumbers the library; resolving a track from either source |
+| `data/likes`, `data/queue`, `data/settings`, `data/model`, `core` | 48 | persistence, defaults, grouping, formatting |
 
-Two choices are worth knowing about.
+Three choices are worth knowing about.
 
 **Tag fixtures are built byte by byte in the tests**, in
 `data/lyrics/tags/TagFixtures.kt`, rather than checked in as sample files. A
 checked-in `.mp3` proves the parser handles that one file; a fixture that
 assembles a synchsafe size field proves the parser handles the rule.
+
+**Container fixtures are built the same way**, in each extractor's own test. An
+APE seek table and an ASF packet are written there from the specification, so a
+passing test says the reader agrees with the format rather than with whatever
+produced a sample file — and a fixture generated by the same misunderstanding as
+the parser would agree with it perfectly and prove nothing.
+`playback/ExtractorFakes.kt` supplies the input and output an extractor is
+given, in place of `media3-test-utils`, which would drag JUnit 4 in behind it.
 
 **The format table was written from a device, not from documentation.** Each
 entry in `AudioFormats` reflects what a Samsung SM‑M315F on Android 16 actually
@@ -435,8 +528,9 @@ receive an inset.
 | **0.1.0** ✅ | Kotlin/Compose/Media3 port. Track list, now playing, play/pause/skip/seek, media notification, saved queue. |
 | **0.2.0** ✅ | Full browse port: albums, artists, search, drill-downs, audio picker. |
 | **0.3.0** ✅ | Lyrics from tags, sidecars and — opt in — the network. Liked songs and editable playlists in Room. FFmpeg decoding, an AIFF reader, and a library that stops hiding what the media scanner could not parse. |
-| 0.4.0 | Folder browsing via SAF. Demuxers for APE, WavPack and WMA — see [Audio formats](#audio-formats) for why a decoder alone is not enough. |
-| 0.5.0 | The real UI: iPod-style hierarchy, paper-grain texture overlay, hand-sketched icon set. |
+| **0.4.0** ✅ | Folder browsing via SAF, reaching the files MediaStore never indexed. Demuxers for WavPack, APE and WMA, and the JNI entry point their decoders need — see [Audio formats](#audio-formats) for why a decoder alone is not enough. |
+| 0.5.0 | Home screen widgets in Jetpack Glance, driven by the media session. |
+| 0.5.3 | The real UI: iPod-style hierarchy, paper-grain texture overlay, hand-sketched icon set. |
 | 0.5.5 | Tree-shaken FFmpeg build, targeting a 60–80% smaller binary. |
 | 0.6.0 | Stabilisation, accessibility, RTL. Peer-to-peer sharing over Bluetooth/Wi-Fi Direct using a `.chmf` bundle. |
 | 1.0.0 | F-Droid and direct APK distribution. |

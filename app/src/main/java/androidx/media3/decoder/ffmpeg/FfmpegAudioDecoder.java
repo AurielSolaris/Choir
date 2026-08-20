@@ -39,6 +39,17 @@ import java.util.List;
   private static final int AUDIO_DECODER_ERROR_INVALID_DATA = -1;
   private static final int AUDIO_DECODER_ERROR_OTHER = -2;
 
+  /** Choir's addition. See {@code app.auriel.choir.playback.ChoirCodecContext}. */
+  private static final int CHOIR_CODEC_CONTEXT_MAGIC = 0x43435831;
+
+  private static final int CHOIR_CODEC_CONTEXT_BYTES = 16;
+
+  /**
+   * Set once the native library turns out to predate {@code ffmpegInitializeContext}, so the
+   * failure is discovered at most once per process rather than per track.
+   */
+  private static volatile boolean choirInitializeUnavailable;
+
   private final String codecName;
   @Nullable private final byte[] extraData;
   private final @C.PcmEncoding int encoding;
@@ -66,8 +77,7 @@ import java.util.List;
     encoding = outputFloat ? C.ENCODING_PCM_FLOAT : C.ENCODING_PCM_16BIT;
     outputBufferSize =
         outputFloat ? INITIAL_OUTPUT_BUFFER_SIZE_32BIT : INITIAL_OUTPUT_BUFFER_SIZE_16BIT;
-    nativeContext =
-        ffmpegInitialize(codecName, extraData, outputFloat, format.sampleRate, format.channelCount);
+    nativeContext = initializeDecoder(codecName, extraData, outputFloat, format);
     if (nativeContext == 0) {
       throw new FfmpegDecoderException("Initialization failed.");
     }
@@ -190,10 +200,91 @@ import java.util.List;
         return getAlacExtraData(initializationData);
       case MimeTypes.AUDIO_VORBIS:
         return getVorbisExtraData(initializationData);
+        // Choir's additions, for the containers it demuxes itself. Each of
+        // these extractors publishes the codec's extradata exactly as FFmpeg
+        // wants it, so there is nothing to repackage: six bytes of header for
+        // Monkey's Audio, and the tail of the WAVEFORMATEX for Windows Media.
+        // The strings are ChoirMimeTypes, and the two must agree.
+      case "audio/x-ape":
+      case "audio/x-ms-wma":
+      case "audio/x-ms-wmapro":
+      case "audio/x-ms-wmalossless":
+      case "audio/x-ms-wmavoice":
+        return initializationData.isEmpty() ? null : initializationData.get(0);
       default:
         // Other codecs do not require extra data.
         return null;
     }
+  }
+
+  /**
+   * Choir's addition: the codec context fields that {@link Format} has nowhere to put.
+   *
+   * <p>Windows Media will not open without a block alignment and a bitrate, and Monkey's Audio will
+   * not open without a bit depth. None of the three is expressible on a {@code Format}, so the
+   * extractor appends them as a second entry in {@code initializationData}, in the layout written
+   * by {@code app.auriel.choir.playback.ChoirCodecContext} — magic, block align, bits per coded
+   * sample, bitrate, each a little-endian 32-bit value. The two must agree, and this is the half
+   * that reads it; app code is not imported here so that this file stays a vendored Media3 source
+   * with additions rather than a fork entangled with the app.
+   *
+   * @return the three values in that order, or {@code null} where this stream did not supply them.
+   */
+  @Nullable
+  private static int[] getChoirCodecContext(List<byte[]> initializationData) {
+    if (initializationData.size() < 2) {
+      return null;
+    }
+    byte[] data = initializationData.get(1);
+    if (data.length != CHOIR_CODEC_CONTEXT_BYTES
+        || readLittleEndianInt(data, 0) != CHOIR_CODEC_CONTEXT_MAGIC) {
+      return null;
+    }
+    return new int[] {
+      readLittleEndianInt(data, 4), readLittleEndianInt(data, 8), readLittleEndianInt(data, 12)
+    };
+  }
+
+  private static int readLittleEndianInt(byte[] data, int offset) {
+    return (data[offset] & 0xFF)
+        | ((data[offset + 1] & 0xFF) << 8)
+        | ((data[offset + 2] & 0xFF) << 16)
+        | ((data[offset + 3] & 0xFF) << 24);
+  }
+
+  /**
+   * Choir's addition: opens the native decoder, using the richer entry point where there is one.
+   *
+   * <p>{@code ffmpegInitializeContext} is not part of upstream Media3 — it is appended to the JNI
+   * by {@code tools/ffmpeg-jni-context.inc} when {@code tools/build-ffmpeg.sh} runs. A
+   * {@code libffmpegJNI.so} built before that, or by anyone following upstream's own instructions,
+   * does not export it, and calling it raises {@link UnsatisfiedLinkError} on the first attempt.
+   *
+   * <p>That is caught rather than allowed to propagate, because the alternative is that adding
+   * Monkey's Audio and Windows Media breaks ALAC and Dolby on every installation carrying an older
+   * library. Falling back costs those two formats and nothing else: they fail to open, which is
+   * what they did before any of this existed.
+   */
+  private long initializeDecoder(
+      String codecName, @Nullable byte[] extraData, boolean outputFloat, Format format) {
+    int[] codecContext = getChoirCodecContext(format.initializationData);
+    if (codecContext != null && !choirInitializeUnavailable) {
+      try {
+        return ffmpegInitializeContext(
+            codecName,
+            extraData,
+            outputFloat,
+            format.sampleRate,
+            format.channelCount,
+            /* blockAlign= */ codecContext[0],
+            /* bitsPerCodedSample= */ codecContext[1],
+            /* bitRate= */ codecContext[2]);
+      } catch (UnsatisfiedLinkError e) {
+        choirInitializeUnavailable = true;
+      }
+    }
+    return ffmpegInitialize(
+        codecName, extraData, outputFloat, format.sampleRate, format.channelCount);
   }
 
   private static byte[] getAlacExtraData(List<byte[]> initializationData) {
@@ -233,6 +324,27 @@ import java.util.List;
       boolean outputFloat,
       int rawSampleRate,
       int rawChannelCount);
+
+  /**
+   * Choir's addition, appended to the JNI by {@code tools/ffmpeg-jni-context.inc}.
+   *
+   * <p>Upstream's {@code ffmpegInitialize} applies its sample rate and channel count only to raw
+   * PCM, because every codec it was written for reads those out of its own extradata. The ones
+   * Choir demuxes itself do not: they are told, or they decline to open. This carries the same
+   * arguments plus the three fields those codecs read off {@code AVCodecContext} directly.
+   *
+   * <p>Additive on purpose. Changing the signature of {@code ffmpegInitialize} would have made
+   * every existing {@code libffmpegJNI.so} unusable rather than merely incomplete.
+   */
+  private native long ffmpegInitializeContext(
+      String codecName,
+      @Nullable byte[] extraData,
+      boolean outputFloat,
+      int sampleRate,
+      int channelCount,
+      int blockAlign,
+      int bitsPerCodedSample,
+      int bitRate);
 
   private native int ffmpegDecode(
       long context,

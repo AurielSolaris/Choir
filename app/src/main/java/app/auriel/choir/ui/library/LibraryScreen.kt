@@ -30,11 +30,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.auriel.choir.R
 import app.auriel.choir.data.LibrarySnapshot
+import app.auriel.choir.data.folders.FolderRoot
 import app.auriel.choir.data.playlist.PlaylistSummary
 import app.auriel.choir.ui.ChoirIcons
 import app.auriel.choir.ui.components.AlbumRow
 import app.auriel.choir.ui.components.CenteredMessage
 import app.auriel.choir.ui.components.ArtistRow
+import app.auriel.choir.ui.components.ChoirRow
 import app.auriel.choir.ui.components.ChoirHeader
 import app.auriel.choir.ui.components.ChoirTabs
 import app.auriel.choir.ui.components.IconAction
@@ -43,10 +45,11 @@ import app.auriel.choir.ui.components.LikedSongsRow
 import app.auriel.choir.ui.components.PlaylistRow
 import app.auriel.choir.ui.components.RowDivider
 import app.auriel.choir.ui.components.TrackRow
+import app.auriel.choir.ui.folders.folderContents
 import app.auriel.choir.ui.theme.LocalChoirColors
 
 /**
- * The library, browsable four ways — Choir's port of `MusicBrowserActivity` and
+ * The library, browsable five ways — Choir's port of `MusicBrowserActivity` and
  * the tab host it presided over.
  *
  * Selecting a tab swaps the list under a shared header; drilling into an album,
@@ -67,10 +70,17 @@ fun LibraryScreen(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onTrackLongPress: (Int) -> Unit,
+    onFolderSelected: (String) -> Unit,
+    onFolderTrackSelected: (Int) -> Unit,
+    onFolderTrackLongPress: (Int) -> Unit,
+    onAddFolder: () -> Unit,
+    onRescanFolders: () -> Unit,
+    onRemoveFolder: (FolderRoot) -> Unit,
     onNewPlaylist: () -> Unit,
     onImportFile: () -> Unit,
     onImportLegacy: () -> Unit,
     playlists: List<PlaylistSummary>,
+    folderRoots: List<FolderRoot>,
     legacyPlaylistCount: Int,
     likes: LikeState,
     likedCount: Int,
@@ -100,6 +110,22 @@ fun LibraryScreen(
                         icon = ChoirIcons.Add,
                         contentDescription = stringResource(R.string.cd_new_playlist),
                         onClick = onNewPlaylist,
+                    )
+                } else if (selectedTab == LibraryTab.FOLDERS) {
+                    // Nothing here to shuffle — the tab is a tree, not a list —
+                    // and a granted folder is the one thing in the library that
+                    // can change without the platform saying so.
+                    if (folderRoots.isNotEmpty()) {
+                        IconAction(
+                            icon = ChoirIcons.Refresh,
+                            contentDescription = stringResource(R.string.cd_rescan_folders),
+                            onClick = onRescanFolders,
+                        )
+                    }
+                    IconAction(
+                        icon = ChoirIcons.Add,
+                        contentDescription = stringResource(R.string.cd_add_folder),
+                        onClick = onAddFolder,
                     )
                 } else if (snapshot.tracks.isNotEmpty()) {
                     IconAction(
@@ -136,6 +162,17 @@ fun LibraryScreen(
 
                 LibraryTab.ALBUMS -> AlbumsTab(snapshot, onAlbumSelected, contentPadding)
                 LibraryTab.ARTISTS -> ArtistsTab(snapshot, onArtistSelected, contentPadding)
+                LibraryTab.FOLDERS -> FoldersTab(
+                    snapshot = snapshot,
+                    folderRoots = folderRoots,
+                    onFolderSelected = onFolderSelected,
+                    onTrackSelected = onFolderTrackSelected,
+                    onTrackLongPress = onFolderTrackLongPress,
+                    onAddFolder = onAddFolder,
+                    onRemoveFolder = onRemoveFolder,
+                    likes = likes,
+                    contentPadding = contentPadding,
+                )
                 LibraryTab.PLAYLISTS -> PlaylistsTab(
                     playlists = playlists,
                     likedCount = likedCount,
@@ -229,6 +266,96 @@ private fun ArtistsTab(
                     artist.albumCount,
                 ),
                 onClick = { onArtistSelected(artist.id) },
+            )
+            RowDivider()
+        }
+    }
+}
+
+/**
+ * The library as its files are arranged, and the folders Choir was granted.
+ *
+ * The tree at the top is built from everything MediaStore indexed, so it is
+ * there without any folder having been granted at all — the common case, and
+ * the one needing no explanation. The rows below it are for the other case: the
+ * music Android will not admit is music, which can only be reached by pointing
+ * Choir at the folder holding it.
+ */
+@Composable
+private fun FoldersTab(
+    snapshot: LibrarySnapshot,
+    folderRoots: List<FolderRoot>,
+    onFolderSelected: (String) -> Unit,
+    onTrackSelected: (Int) -> Unit,
+    onTrackLongPress: (Int) -> Unit,
+    onAddFolder: () -> Unit,
+    onRemoveFolder: (FolderRoot) -> Unit,
+    likes: LikeState,
+    contentPadding: PaddingValues,
+) {
+    val colors = LocalChoirColors.current
+    val listState = rememberLazyListState()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        contentPadding = contentPadding,
+    ) {
+        folderContents(
+            folder = snapshot.folders,
+            onOpenFolder = onFolderSelected,
+            onPlay = onTrackSelected,
+            onTrackLongPress = onTrackLongPress,
+            likes = likes,
+        )
+
+        item(key = "add-folder") {
+            ActionRow(
+                icon = ChoirIcons.Add,
+                label = stringResource(R.string.folder_add),
+                onClick = onAddFolder,
+            )
+        }
+
+        // Said once, to someone who has granted nothing yet. Repeating it above
+        // a list of folders they have already added would be nagging.
+        if (folderRoots.isEmpty()) {
+            item(key = "add-folder-why") {
+                Text(
+                    text = stringResource(R.string.folder_add_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.muted,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        items(folderRoots, key = { it.treeUri }) { root ->
+            ChoirRow(
+                title = root.name,
+                subtitle = if (root.unavailable) {
+                    stringResource(R.string.folder_unavailable)
+                } else {
+                    pluralStringResource(R.plurals.track_count, root.trackCount, root.trackCount)
+                },
+                trailing = null,
+                onClick = { onRemoveFolder(root) },
+                leading = {
+                    Icon(
+                        imageVector = ChoirIcons.Folder,
+                        contentDescription = null,
+                        tint = if (root.unavailable) colors.divider else colors.muted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                accessory = {
+                    Icon(
+                        imageVector = ChoirIcons.Close,
+                        contentDescription = stringResource(R.string.cd_remove_folder),
+                        tint = colors.muted,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
             )
             RowDivider()
         }
@@ -352,6 +479,10 @@ private fun countLabel(
     LibraryTab.ARTISTS ->
         pluralStringResource(R.plurals.artist_count, snapshot.artists.size, snapshot.artists.size)
 
+    LibraryTab.FOLDERS -> snapshot.folders.folders.size.let {
+        pluralStringResource(R.plurals.folder_count, it, it)
+    }
+
     // Liked Songs is always there, so the tab never shows "0 playlists".
     LibraryTab.PLAYLISTS -> (playlistCount + 1).let {
         pluralStringResource(R.plurals.playlist_count, it, it)
@@ -363,5 +494,6 @@ private val LibraryTab.labelRes: Int
         LibraryTab.TRACKS -> R.string.tab_tracks
         LibraryTab.ALBUMS -> R.string.tab_albums
         LibraryTab.ARTISTS -> R.string.tab_artists
+        LibraryTab.FOLDERS -> R.string.tab_folders
         LibraryTab.PLAYLISTS -> R.string.tab_playlists
     }

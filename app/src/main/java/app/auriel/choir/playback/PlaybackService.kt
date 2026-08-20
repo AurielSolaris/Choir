@@ -18,7 +18,7 @@ import app.auriel.choir.MainActivity
 import app.auriel.choir.R
 import app.auriel.choir.core.MusicLog
 import app.auriel.choir.core.Permissions
-import app.auriel.choir.data.MediaStoreRepository
+import app.auriel.choir.data.TrackResolver
 import app.auriel.choir.data.queue.QueueRepository
 import app.auriel.choir.data.queue.SavedQueue
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +41,7 @@ import org.koin.android.ext.android.inject
 class PlaybackService : MediaSessionService() {
 
     private val queueRepository: QueueRepository by inject()
-    private val mediaStoreRepository: MediaStoreRepository by inject()
+    private val trackResolver: TrackResolver by inject()
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var saveJob: Job? = null
@@ -131,7 +131,7 @@ class PlaybackService : MediaSessionService() {
             if (!Permissions.hasAudioAccess(this@PlaybackService)) return@launch
 
             val saved = queueRepository.load() ?: return@launch
-            val tracks = mediaStoreRepository.tracksByIds(saved.trackIds)
+            val tracks = trackResolver.byIds(saved.trackIds)
             if (tracks.isEmpty()) {
                 MusicLog.i(TAG, "saved queue no longer resolves to any track; dropping it")
                 queueRepository.clear()

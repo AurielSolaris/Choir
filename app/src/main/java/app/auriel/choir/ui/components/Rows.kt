@@ -235,6 +235,38 @@ fun PlaylistRow(name: String, countLabel: String, onClick: () -> Unit) {
 }
 
 /**
+ * A folder, in the tree the files themselves make.
+ *
+ * The count is of everything below it, not just what sits directly inside:
+ * an album folder of two disc subfolders reads as one album, which is what
+ * someone drilling into it expects to find.
+ */
+@Composable
+fun FolderRow(
+    name: String,
+    countLabel: String,
+    onClick: () -> Unit,
+    unavailable: Boolean = false,
+) {
+    val colors = LocalChoirColors.current
+
+    ChoirRow(
+        title = name,
+        subtitle = countLabel,
+        trailing = null,
+        onClick = onClick,
+        leading = {
+            Icon(
+                imageVector = ChoirIcons.Folder,
+                contentDescription = null,
+                tint = if (unavailable) colors.divider else colors.muted,
+                modifier = Modifier.size(18.dp),
+            )
+        },
+    )
+}
+
+/**
  * Liked Songs, pinned to the top of the Playlists tab.
  *
  * Not a [Playlist]: it has no MediaStore id, it is never empty of meaning even

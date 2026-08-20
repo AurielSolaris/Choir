@@ -9,6 +9,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import app.auriel.choir.data.folders.FolderFileEntity
+import app.auriel.choir.data.folders.FolderRootEntity
+import app.auriel.choir.data.folders.FoldersDao
 import app.auriel.choir.data.likes.LikedTrackEntity
 import app.auriel.choir.data.likes.LikesDao
 import app.auriel.choir.data.playlist.PlaylistDao
@@ -32,8 +35,10 @@ import app.auriel.choir.data.queue.QueueEntryEntity
         LikedTrackEntity::class,
         PlaylistEntity::class,
         PlaylistMemberEntity::class,
+        FolderRootEntity::class,
+        FolderFileEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class ChoirDatabase : RoomDatabase() {
@@ -43,6 +48,8 @@ abstract class ChoirDatabase : RoomDatabase() {
     abstract fun likesDao(): LikesDao
 
     abstract fun playlistDao(): PlaylistDao
+
+    abstract fun foldersDao(): FoldersDao
 
     companion object {
         private const val NAME = "choir.db"
@@ -91,9 +98,54 @@ abstract class ChoirDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v0.4.0 added folder browsing: the trees the user granted, and what
+         * was found inside them.
+         *
+         * `folder_files` is the one table that holds library data rather than
+         * references to it — see [FolderFileEntity] for why there is nothing to
+         * refer to. Dropping it would only cost a rescan.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `folder_roots` (" +
+                        "`treeUri` TEXT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`treeUri`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `folder_files` (" +
+                        "`documentUri` TEXT NOT NULL, " +
+                        "`trackId` INTEGER NOT NULL, " +
+                        "`treeUri` TEXT NOT NULL, " +
+                        "`relativePath` TEXT NOT NULL, " +
+                        "`displayName` TEXT NOT NULL, " +
+                        "`mimeType` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`artist` TEXT NOT NULL, " +
+                        "`album` TEXT NOT NULL, " +
+                        "`durationMs` INTEGER NOT NULL, " +
+                        "`trackNumber` INTEGER NOT NULL, " +
+                        "`year` INTEGER NOT NULL, " +
+                        "`sizeBytes` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`documentUri`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_folder_files_treeUri` " +
+                        "ON `folder_files` (`treeUri`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_folder_files_trackId` " +
+                        "ON `folder_files` (`trackId`)",
+                )
+            }
+        }
+
         fun build(context: Context): ChoirDatabase =
             Room.databaseBuilder(context.applicationContext, ChoirDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Likes are user data now, so upgrades migrate properly rather
                 // than starting over. A *downgrade* only happens when someone
                 // sideloads backwards, and there is no schema to migrate to.

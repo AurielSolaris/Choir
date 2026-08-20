@@ -8,11 +8,35 @@ import android.net.Uri
 import android.provider.MediaStore
 
 /**
- * One audio file, as MediaStore knows it.
+ * Where a track's bytes are, and therefore how to open them.
+ *
+ * Until v0.4.0 there was only one answer and it was implicit in the id. Folder
+ * browsing added a second: the media scanner refuses to index `.wv` and `.tta`
+ * as audio at all — it types them `application/octet-stream` with
+ * `media_type=0` — so the only way to reach those files is a folder the user
+ * granted, and a document URI to open it with.
+ */
+sealed interface TrackSource {
+
+    /** A row in `MediaStore.Audio.Media`, addressed by its id. */
+    data object Indexed : TrackSource
+
+    /**
+     * A file inside a folder tree the user granted, addressed by its document
+     * URI. Held as a [String] rather than a [Uri] so that a [Track] stays a
+     * plain value: constructible, comparable and testable without the Android
+     * framework loaded.
+     */
+    data class Folder(val documentUri: String) : TrackSource
+}
+
+/**
+ * One audio file, as MediaStore knows it — or, since v0.4.0, as a granted
+ * folder does.
  *
  * Deliberately holds no `DATA` path: on scoped storage (minSdk 29) the raw file
  * path is unreliable and often unreadable. Everything — playback, artwork —
- * goes through content URIs derived from [id] and [albumId].
+ * goes through the URI [source] resolves to.
  */
 data class Track(
     val id: Long,
@@ -31,6 +55,14 @@ data class Track(
      */
     val displayName: String = "",
     val mimeType: String = "",
+    /**
+     * The folder the file sits in, relative to its storage volume and with a
+     * trailing slash: `Music/Nick Drake/`. MediaStore keeps this per row, so it
+     * costs one more column rather than a second query, and it is what the
+     * folder tree is built out of. Empty when the volume would not say.
+     */
+    val relativePath: String = "",
+    val source: TrackSource = TrackSource.Indexed,
 ) {
     /**
      * False when MediaStore could not work out how long the track is, which it
@@ -40,14 +72,28 @@ data class Track(
      */
     val hasKnownDuration: Boolean get() = durationMs > 0L
 
-    val contentUri: Uri
-        get() = ContentUris.withAppendedId(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            id,
-        )
+    /** True for a track reached through a granted folder rather than the index. */
+    val isFromFolder: Boolean get() = source is TrackSource.Folder
 
-    val albumArtUri: Uri
-        get() = albumArtUri(albumId)
+    /** Where the folder tree files this track, as `Music/Nick Drake/probe.wv`. */
+    val path: String get() = relativePath + displayName
+
+    val contentUri: Uri
+        get() = when (val source = source) {
+            TrackSource.Indexed -> ContentUris.withAppendedId(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                id,
+            )
+            is TrackSource.Folder -> Uri.parse(source.documentUri)
+        }
+
+    /**
+     * The album-art collection knows nothing about a file it never indexed, so
+     * a folder track has no artwork URI to offer and the caller draws its
+     * placeholder instead.
+     */
+    val albumArtUri: Uri?
+        get() = if (source is TrackSource.Folder || albumId <= 0L) null else albumArtUri(albumId)
 
     companion object {
         /**
