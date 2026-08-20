@@ -20,6 +20,10 @@
         <item quantity="one">%1$d artist</item>
         <item quantity="other">%1$d artists</item>
     </plurals>
+    <plurals name="folder_count">
+        <item quantity="one">%1$d folder</item>
+        <item quantity="other">%1$d folders</item>
+    </plurals>
     <plurals name="playlist_count">
         <item quantity="one">%1$d playlist</item>
         <item quantity="other">%1$d playlists</item>
@@ -30,6 +34,7 @@
     <string name="tab_albums">Albums</string>
     <string name="tab_artists">Artists</string>
     <string name="tab_playlists">Playlists</string>
+    <string name="tab_folders">Folders</string>
 
     <!-- Browse -->
     <string name="albums_empty">No albums yet.</string>
@@ -48,6 +53,22 @@
     <string name="playlist_imported_partial">Imported %1$d into “%2$s” — %3$d not in your library</string>
     <string name="playlist_exported">Playlist exported</string>
     <string name="playlist_file_failed">That file could not be read</string>
+
+    <!-- Folders -->
+    <string name="folders_empty">No folders here.</string>
+    <!-- The offer has to explain itself: nobody grants a folder to an app that
+         has not said what it will do with it, and the reason is a real one. -->
+    <string name="folder_add">Add a folder…</string>
+    <string name="folder_add_body">Android hides some music from apps — WavPack, Musepack and True Audio files are filed as plain data, not audio. Point Choir at a folder and it reads what is actually there.</string>
+    <string name="folder_rescan">Check folders again</string>
+    <string name="folder_unavailable">Unavailable — the storage may be disconnected</string>
+    <string name="folder_added">Added “%1$s”</string>
+    <string name="folder_add_failed">That folder could not be added</string>
+    <string name="folder_remove_title">Remove this folder?</string>
+    <string name="folder_remove_message">Choir will stop reading “%1$s”. Nothing is deleted — the files stay exactly where they are.</string>
+    <string name="folder_remove">Remove</string>
+    <string name="folder_granted_title">Folders you have granted</string>
+    <string name="folder_only_here">Not in the Android media library — only Choir can see this</string>
 
     <!-- Track actions -->
     <string name="action_like">Add to Liked Songs</string>
@@ -167,4 +188,7 @@
     <string name="cd_export_playlist">Export playlist</string>
     <string name="cd_reorder">Reorder</string>
     <string name="cd_settings">Settings</string>
+    <string name="cd_add_folder">Add a folder</string>
+    <string name="cd_rescan_folders">Check folders again</string>
+    <string name="cd_remove_folder">Remove this folder</string>
 </resources>

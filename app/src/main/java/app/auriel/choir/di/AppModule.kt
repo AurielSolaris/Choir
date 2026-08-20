@@ -7,6 +7,9 @@ import app.auriel.choir.data.AlbumArtLoader
 import app.auriel.choir.data.ChoirDatabase
 import app.auriel.choir.data.MediaStoreRepository
 import app.auriel.choir.data.MusicLibrary
+import app.auriel.choir.data.TrackResolver
+import app.auriel.choir.data.folders.FolderRepository
+import app.auriel.choir.data.folders.FolderScanner
 import app.auriel.choir.data.likes.LikesRepository
 import app.auriel.choir.data.lyrics.LyricsRepository
 import app.auriel.choir.data.lyrics.online.LyricsCache
@@ -30,14 +33,18 @@ val appModule = module {
     single { get<ChoirDatabase>().queueDao() }
     single { get<ChoirDatabase>().likesDao() }
     single { get<ChoirDatabase>().playlistDao() }
+    single { get<ChoirDatabase>().foldersDao() }
     single { QueueRepository(get()) }
     single { LikesRepository(get()) }
     single { PlaylistRepository(get()) }
+    single { FolderScanner(androidContext()) }
+    single { FolderRepository(androidContext(), get(), get()) }
 
     // Library. MusicLibrary is a singleton so the browse screens, the search
     // screen and the drill-downs all read one loaded copy.
     single { MediaStoreRepository(androidContext()) }
-    single { MusicLibrary(get()) }
+    single { TrackResolver(get<MediaStoreRepository>()::tracksByIds, get()) }
+    single { MusicLibrary(get(), get()) }
     single { AlbumArtLoader(androidContext()) }
     single { PlaylistFiles(androidContext(), get(), get()) }
 
@@ -52,7 +59,7 @@ val appModule = module {
     // hold their own controller.
     single { PlaybackConnection(androidContext()) }
 
-    viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { MusicPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get()) }
 }

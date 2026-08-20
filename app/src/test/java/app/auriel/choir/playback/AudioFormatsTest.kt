@@ -107,10 +107,24 @@ class AudioFormatsTest {
          */
         @Test
         fun `lossless formats in unreadable containers need a demuxer, not a decoder`() {
-            listOf("song.ape", "song.wv", "song.wma", "song.tta", "song.mpc", "song.dsf")
+            listOf("song.tta", "song.mpc", "song.dsf", "song.tak", "song.shn")
                 .forEach {
                     assertEquals(Playability.NEEDS_DEMUXER, AudioFormats.playabilityOf(it, null), it)
                 }
+        }
+
+        /**
+         * The three containers v0.4.0 closed. Each had a decoder in the FFmpeg
+         * build from v0.3.0 and was unplayable anyway, which is the case the
+         * two axes were separated to describe; supplying the demuxer moves them
+         * from "nothing can open this" to "this plays where the decoder is".
+         */
+        @Test
+        fun `the containers Choir now opens itself need only the decoder`() {
+            listOf("song.ape", "song.wma", "song.wv").forEach {
+                assertEquals(Demuxer.CHOIR, AudioFormats.identify(it, null)?.demuxer, it)
+                assertEquals(Playability.NEEDS_DECODER, AudioFormats.playabilityOf(it, null), it)
+            }
         }
 
         /**
@@ -124,6 +138,20 @@ class AudioFormatsTest {
             assertEquals(Demuxer.CHOIR, aiff?.demuxer)
             assertEquals(AudioFormats.Codec.PLATFORM, aiff?.codec)
             assertEquals(Playability.NATIVE, aiff?.playability)
+        }
+
+        /**
+         * WavPack is the other half of the same story, and the one that shows
+         * why the two axes are kept apart: the decoder arrived in v0.3.0 with
+         * FFmpeg and changed nothing, because nothing could open the container.
+         * v0.4.0 supplies the demuxer, and only then does a `.wv` play.
+         */
+        @Test
+        fun `WavPack opens with Choir's own reader and still needs the decoder`() {
+            val wavpack = AudioFormats.identify("song.wv", null)
+            assertEquals(Demuxer.CHOIR, wavpack?.demuxer)
+            assertEquals(AudioFormats.Codec.FFMPEG, wavpack?.codec)
+            assertEquals(Playability.NEEDS_DECODER, wavpack?.playability)
         }
 
         @Test

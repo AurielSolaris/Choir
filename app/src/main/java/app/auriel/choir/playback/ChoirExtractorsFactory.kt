@@ -36,5 +36,10 @@ class ChoirExtractorsFactory : ExtractorsFactory {
         responseHeaders: Map<String, List<String>>,
     ): Array<Extractor> = defaults.createExtractors(uri, responseHeaders) + choirExtractors()
 
-    private fun choirExtractors(): Array<Extractor> = arrayOf(AiffExtractor())
+    private fun choirExtractors(): Array<Extractor> = arrayOf(
+        AiffExtractor(),
+        WavPackExtractor(),
+        ApeExtractor(),
+        AsfExtractor(),
+    )
 }

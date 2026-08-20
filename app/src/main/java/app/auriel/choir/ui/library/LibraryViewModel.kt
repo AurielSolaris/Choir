@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import app.auriel.choir.data.LibrarySnapshot
 import app.auriel.choir.data.MediaStoreRepository
 import app.auriel.choir.data.MusicLibrary
+import app.auriel.choir.data.folders.FolderRepository
+import app.auriel.choir.data.folders.FolderRoot
 import app.auriel.choir.data.likes.LikesRepository
 import app.auriel.choir.data.likes.likedTracksIn
 import app.auriel.choir.data.lyrics.Lyrics
@@ -33,8 +35,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** The four ways in, in the order the tab strip shows them. */
-enum class LibraryTab { TRACKS, ALBUMS, ARTISTS, PLAYLISTS }
+/** The five ways in, in the order the tab strip shows them. */
+enum class LibraryTab { TRACKS, ALBUMS, ARTISTS, FOLDERS, PLAYLISTS }
+
+/** The outcome of granting a folder, for the one line of feedback it earns. */
+sealed interface FolderResult {
+    data class Added(val name: String) : FolderResult
+    data object Failed : FolderResult
+}
 
 /** The outcome of an import or export, for the one line of feedback it earns. */
 sealed interface PlaylistFileResult {
@@ -85,6 +93,7 @@ class LibraryViewModel(
     private val playlistRepository: PlaylistRepository,
     private val playlistFiles: PlaylistFiles,
     private val mediaStore: MediaStoreRepository,
+    private val folders: FolderRepository,
 ) : ViewModel() {
 
     val snapshot: StateFlow<LibrarySnapshot> = library.snapshot
@@ -122,7 +131,10 @@ class LibraryViewModel(
             } else {
                 SearchResults(
                     query = query,
-                    tracks = library.tracks.filter {
+                    // Everything playable, not just what MediaStore indexed: a
+                    // file only a granted folder can see is still a track, and
+                    // searching is how someone finds one by name.
+                    tracks = library.allTracks.filter {
                         it.title.contains(term, ignoreCase = true) ||
                             it.artist.contains(term, ignoreCase = true) ||
                             it.album.contains(term, ignoreCase = true)
@@ -150,7 +162,7 @@ class LibraryViewModel(
      */
     val likedTracks: StateFlow<List<Track>> =
         combine(snapshot, likes.liked) { library, liked ->
-            likedTracksIn(liked, library.tracks)
+            likedTracksIn(liked, library.allTracks)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
@@ -160,7 +172,11 @@ class LibraryViewModel(
         // case where ids are stable.
         viewModelScope.launch {
             library.snapshot
-                .map { it.tracks }
+                // Everything playable, folder tracks included: a like on a
+                // file only a granted folder can see must not be treated as an
+                // orphan and re-pointed at whatever indexed track happens to
+                // share its title and length.
+                .map { it.allTracks }
                 .distinctUntilChanged()
                 .collect { tracks ->
                     likes.reconcile(tracks)
@@ -273,6 +289,43 @@ class LibraryViewModel(
 
     fun reorderPlaylist(playlistId: Long, memberIdsInOrder: List<Long>) {
         viewModelScope.launch { playlistRepository.applyOrder(playlistId, memberIdsInOrder) }
+    }
+
+    // --- Folders -------------------------------------------------------------
+
+    /** The granted trees themselves, for the rows that manage them. */
+    val folderRoots: StateFlow<List<FolderRoot>> = library.folderRoots
+
+    private val _folderResult = MutableStateFlow<FolderResult?>(null)
+    val folderResult: StateFlow<FolderResult?> = _folderResult.asStateFlow()
+
+    /**
+     * Remembers a folder the user picked in the system picker.
+     *
+     * The scan runs inside [FolderRepository.add], so the confirmation only
+     * appears once Choir has actually read the folder — a toast that arrives
+     * before the tree does would be a lie about a folder that turned out to be
+     * unreadable.
+     */
+    fun addFolder(uri: Uri) {
+        viewModelScope.launch {
+            val name = folders.add(uri)
+            _folderResult.value = if (name != null) {
+                FolderResult.Added(name)
+            } else {
+                FolderResult.Failed
+            }
+        }
+    }
+
+    fun removeFolder(treeUri: String) {
+        viewModelScope.launch { folders.remove(treeUri) }
+    }
+
+    fun rescanFolders() = library.rescanFolders()
+
+    fun clearFolderResult() {
+        _folderResult.value = null
     }
 
     // --- Playlist files ------------------------------------------------------

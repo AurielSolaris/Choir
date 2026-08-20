@@ -29,17 +29,19 @@ JNI_LIBS="$REPO_ROOT/app/src/main/jniLibs"
 
 # The audio codecs Choir wants and Android does not guarantee.
 #
-# Some of these cannot be reached yet: Media3 has no demuxer for APE, WavPack,
-# WMA, Musepack, TTA, TAK or DSD, so those files still will not open. They are
+# Some of these still cannot be reached: nothing demuxes Musepack, TTA, TAK or
+# DSD, so those files will not open however good the decoder is. They are
 # compiled in anyway — they are a rounding error in binary size, and the day a
 # demuxer lands the decoder should already be there. AudioFormats documents
 # which is which.
 DECODERS=(
     # Lossless, in containers Media3 already opens
     alac flac
+    # Lossless, in containers Choir opens itself
+    ape wavpack
     # Lossless, still waiting on a demuxer
-    ape wavpack tta tak shorten mlp truehd
-    # Windows Media
+    tta tak shorten mlp truehd
+    # Windows Media, reached through Choir's ASF reader
     wmav1 wmav2 wmapro wmalossless wmavoice
     # Musepack and DSD
     mpc7 mpc8 dsd_lsbf dsd_msbf dsd_lsbf_planar dsd_msbf_planar
@@ -133,6 +135,23 @@ step "building FFmpeg static libraries"
     done
 )
 
+step "adding Choir's JNI entry point"
+# Media3's ffmpegInitialize drops the codec context fields that Windows Media
+# and Monkey's Audio refuse to open without. Rather than edit it — which would
+# change the meaning of a function Media3 also ships — a second entry point is
+# appended. See tools/ffmpeg-jni-context.inc for what it does and why.
+#
+# Appending, not patching: a unified diff would have to match context lines in
+# a file that upstream is free to reformat between releases, and would fail the
+# whole build when it did.
+JNI_SOURCE="$MODULE/jni/ffmpeg_jni.cc"
+if grep -q ffmpegInitializeContext "$JNI_SOURCE"; then
+    echo "already present"
+else
+    cat "$REPO_ROOT/tools/ffmpeg-jni-context.inc" >> "$JNI_SOURCE"
+    echo "appended to $JNI_SOURCE"
+fi
+
 step "building libffmpegJNI"
 # The module carries a CMakeLists but no gradle wiring we can use outside an
 # Android project, so CMake is driven directly with the NDK's toolchain file.
@@ -166,12 +185,28 @@ step "copying the decoder's Java sources"
 # The extension's Kotlin/Java half is Apache-2.0 and tiny, and vendoring it
 # avoids requiring a full Android SDK inside the build host just to produce an
 # AAR that would contain these same files.
+#
+# Two of them are no longer pristine: FfmpegLibrary maps Choir's MIME types to
+# FFmpeg codec names, and FfmpegAudioDecoder reads the codec context fields the
+# demuxers supply. Copying over either would delete those additions and turn
+# every APE and WMA file silently unplayable again, so they are left alone and
+# named here instead. Re-apply them by hand when moving to a new Media3 tag;
+# both are marked "Choir's addition" in the source.
 SRC="$MODULE/java/androidx/media3/decoder/ffmpeg"
 DEST="$REPO_ROOT/app/src/main/java/androidx/media3/decoder/ffmpeg"
+MODIFIED=(FfmpegLibrary FfmpegAudioDecoder)
 mkdir -p "$DEST"
 # Audio only. The video renderer is marked experimental upstream and Choir has
 # nothing to show a frame on.
 for f in FfmpegAudioDecoder FfmpegAudioRenderer FfmpegDecoderException FfmpegLibrary package-info; do
+    skip=""
+    for m in "${MODIFIED[@]}"; do
+        [ "$f" = "$m" ] && skip=1
+    done
+    if [ -n "$skip" ] && [ -f "$DEST/$f.java" ]; then
+        echo "keeping $f.java (carries Choir's additions)"
+        continue
+    fi
     cp -v "$SRC/$f.java" "$DEST/"
 done
 
