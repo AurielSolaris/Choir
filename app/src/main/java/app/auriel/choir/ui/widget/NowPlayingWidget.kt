@@ -62,6 +62,12 @@ internal class NowPlayingWidget : ChoirWidget() {
         Column(
             modifier = GlanceModifier.widgetSurface().padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            // Centred rather than packed at the top. A launcher does not hand
+            // out the size that was asked for — a 2x2 request came back half as
+            // tall again on the device this was checked on — and top-aligned
+            // content in a box taller than it expected reads as a broken widget
+            // with a hole under it.
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Artwork(artwork, 64.dp)
             Spacer(GlanceModifier.size(6.dp))

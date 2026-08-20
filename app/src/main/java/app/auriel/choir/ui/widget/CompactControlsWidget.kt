@@ -52,6 +52,7 @@ internal class CompactControlsWidget : ChoirWidget() {
                 modifier = GlanceModifier
                     .defaultWeight()
                     .clickable(actionStartActivity<MainActivity>()),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = snapshot.title.ifBlank { stringOf(R.string.widget_unknown_track) },
