@@ -413,6 +413,33 @@ the next line and wakes once. One wake per line, only while playing, only when a
 Lyric Line widget is actually on a home screen, and none at all past the last
 line of the song. `lyricWaitFrom` is that arithmetic, and it is unit tested.
 
+### The trap: a composition that never changes
+
+`provideGlance` is called when a Glance *session* starts, not on every update.
+`update()` recomposes the session that is already running. So this is wrong,
+and wrong in the way that looks right:
+
+```kotlin
+// Renders correctly exactly once.
+override suspend fun provideGlance(context: Context, id: GlanceId) {
+    val snapshot = store.read()
+    provideContent { Content(snapshot) }
+}
+```
+
+`snapshot` is captured by value and frozen for the life of the session. The
+publisher goes on writing updates that nothing reads, and the widget shows
+whatever was true when it was first drawn — a pause button over a paused track,
+for as long as the process lives. It survives casual testing because a session
+that has to be recreated, after the process dies, does come back current: place
+the widget, and it is right; place it and then press pause, and it is not.
+
+So the snapshot is *observed* inside the composition, through
+`WidgetSnapshotStore.snapshots()`, and the artwork is derived from it with
+`produceState`. `LikedSongsWidget` observes the likes flow for the same reason.
+This was found on a real home screen and could not have been found any other
+way; nothing in a unit test composes a widget.
+
 ### Taps
 
 Glance callbacks run in Choir's process, so a button builds a short-lived

@@ -16,8 +16,11 @@ import app.auriel.choir.ui.widget.ChoirWidgets
 import app.auriel.choir.ui.widget.LyricLineWidget
 import app.auriel.choir.ui.widget.WidgetSnapshot
 import app.auriel.choir.ui.widget.WidgetSnapshotStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -107,6 +110,17 @@ class WidgetPublisher(
         lyricJob?.cancel()
         lyricJob = null
         player()?.removeListener(listener)
+
+        // Deliberately not on `scope`: this runs from the service's onDestroy,
+        // where that scope is about to be cancelled, and a write cancelled
+        // halfway leaves the widgets insisting something is playing over a
+        // player that no longer exists. That is the one wrong state that never
+        // corrects itself, because nothing is left running to correct it.
+        val parting = store.read().copy(isPlaying = false)
+        CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
+            store.write(parting)
+            runCatching { ChoirWidgets.updateAll(context) }
+        }
     }
 
     /**
@@ -122,7 +136,17 @@ class WidgetPublisher(
             val item = current?.currentMediaItem
 
             if (current == null || item == null || current.mediaItemCount == 0) {
-                writeAndUpdate(WidgetSnapshot.Empty)
+                // Not the same as nothing having played. A service that stops
+                // when playback pauses tears its player down and empties the
+                // queue on the way out, and forgetting the track at that moment
+                // is precisely wrong: it is the moment the widget is most
+                // wanted, and the resume affordance is the whole idle state.
+                //
+                // So the last track stands, minus the claim that it is playing.
+                // Only a store that has never been written reads as empty, and
+                // PlayPauseAction prepares an idle player, so the button under
+                // this still works.
+                writeAndUpdate(store.read().copy(isPlaying = false))
                 stopLyricClock()
                 return@launch
             }
@@ -151,8 +175,17 @@ class WidgetPublisher(
 
     private suspend fun writeAndUpdate(snapshot: WidgetSnapshot) {
         store.write(snapshot)
-        runCatching { ChoirWidgets.updateAll(context) }
-            .onFailure { MusicLog.w(TAG, "could not redraw the widgets", it) }
+        try {
+            ChoirWidgets.updateAll(context)
+        } catch (e: CancellationException) {
+            // The service is going away mid-write. That is not a failure to
+            // report, and swallowing it here would both lie in the log and
+            // break the caller's cancellation. detach() writes the parting
+            // state on a scope that outlives this one.
+            throw e
+        } catch (e: Exception) {
+            MusicLog.w(TAG, "could not redraw the widgets", e)
+        }
     }
 
     // --- Lyrics --------------------------------------------------------------

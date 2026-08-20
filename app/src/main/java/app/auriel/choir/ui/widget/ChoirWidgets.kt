@@ -6,6 +6,10 @@ package app.auriel.choir.ui.widget
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.glance.GlanceId
@@ -58,7 +62,8 @@ object ChoirWidgets {
      * ids the launcher holds and does nothing for a widget nobody has added.
      */
     suspend fun updateAll(context: Context) {
-        all.forEach { it.updateAll(context.applicationContext) }
+        val appContext = context.applicationContext
+        all.forEach { it.updateAll(appContext) }
     }
 }
 
@@ -78,11 +83,36 @@ internal abstract class ChoirWidget : GlanceAppWidget() {
     /** Overridden by the widgets that never show art, to skip decoding it. */
     open val artworkSizePx: Int = 0
 
+    /**
+     * Composes from the snapshot as it changes, not as it was.
+     *
+     * The tempting version of this reads the snapshot here, loads the art here,
+     * and hands both to `provideContent` as plain values. It renders correctly
+     * exactly once. Glance recomposes a running session in place rather than
+     * calling this again, so captured values are frozen for the life of the
+     * session — the widget shows whatever was true when it was first drawn and
+     * never changes, while the publisher writes update after update that
+     * nothing reads. It only looks like it works because a session that has to
+     * be recreated, after the process dies, does come back current.
+     *
+     * So the snapshot is observed and the artwork is derived from it, and both
+     * live inside the composition where a change can actually reach the screen.
+     */
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snapshot = WidgetSnapshotStore(context).read()
-        val artwork = loadArtwork(context, snapshot)
+        val store = WidgetSnapshotStore(context)
+        val initial = store.read()
 
-        provideContent { Content(snapshot, artwork) }
+        provideContent {
+            val snapshot by remember { store.snapshots() }.collectAsState(initial)
+
+            // Keyed on the URI rather than the snapshot: a play/pause flips the
+            // snapshot several times a minute and the cover does not change.
+            val artwork by produceState<Bitmap?>(null, snapshot.artworkUri) {
+                value = loadArtwork(context, snapshot)
+            }
+
+            Content(snapshot, artwork)
+        }
     }
 
     private suspend fun loadArtwork(context: Context, snapshot: WidgetSnapshot): Bitmap? {
@@ -221,13 +251,17 @@ internal fun TransportRow(
 @Composable
 internal fun IdlePrompt(text: String) {
     Box(
+        // widgetSurface(), not fillMaxSize(). Without it the widget has no
+        // background at all and the prompt floats as grey text directly on the
+        // wallpaper — which does not read as an empty widget, it reads as a
+        // rendering failure. It was one, until a real home screen showed it.
         modifier = GlanceModifier
-            .fillMaxSize()
+            .widgetSurface()
             .padding(12.dp)
             .clickable(actionStartActivity<MainActivity>()),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text, style = WidgetTheme.invitation, maxLines = 2)
+        Text(text = text, style = WidgetTheme.invitation, maxLines = 3)
     }
 }
 

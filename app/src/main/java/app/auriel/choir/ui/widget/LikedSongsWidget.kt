@@ -5,6 +5,9 @@ package app.auriel.choir.ui.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
@@ -25,7 +28,7 @@ import androidx.glance.layout.size
 import androidx.glance.text.Text
 import app.auriel.choir.R
 import app.auriel.choir.data.likes.LikesRepository
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import org.koin.core.context.GlobalContext
 
 /**
@@ -45,15 +48,20 @@ internal class LikedSongsWidget : GlanceAppWidget() {
 
     override val sizeMode = SizeMode.Responsive(setOf(SQUARE))
 
+    /**
+     * Observed rather than read once, for the reason spelled out in
+     * [ChoirWidget.provideGlance]: a value captured here is frozen for the life
+     * of the Glance session, and liking a song would never reach the widget.
+     */
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val count = GlobalContext.getOrNull()
-            ?.getOrNull<LikesRepository>()
-            ?.liked
-            ?.first()
-            ?.size
-            ?: 0
+        val liked = GlobalContext.getOrNull()?.getOrNull<LikesRepository>()?.liked
 
-        provideContent { Content(count) }
+        provideContent {
+            val count by remember { liked ?: flowOf(emptyList()) }
+                .collectAsState(emptyList())
+
+            Content(count.size)
+        }
     }
 
     @Composable
