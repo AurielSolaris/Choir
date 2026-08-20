@@ -9,6 +9,7 @@ can be made without reading the whole tree first.
 - [Source layout](#source-layout)
 - [How the library is loaded](#how-the-library-is-loaded)
 - [How playback works](#how-playback-works)
+- [Widgets](#widgets)
 - [Design language](#design-language)
 - [Building and running](#building-and-running)
 - [Testing](#testing)
@@ -131,6 +132,7 @@ app/src/main/java/app/auriel/choir/
 │   ├── ApeExtractor.kt          a seek table at the front, exact seeking
 │   ├── AsfExtractor.kt          fixed-size packets, blocks reassembled
 │   ├── ChoirRenderersFactory.kt platform decoders first, FFmpeg for the rest
+│   ├── WidgetPublisher.kt       writes what the player is doing, for the widgets
 │   └── FfmpegSupport.kt         finds an FFmpeg renderer, if this build has one
 │
 ├── di/AppModule.kt              Koin graph
@@ -146,6 +148,7 @@ app/src/main/java/app/auriel/choir/
     ├── nowplaying/              full player and the synced lyric pane
     ├── settings/                the one screen that changes what Choir may do
     ├── folders/                 browsing by directory, through SAF
+    ├── widget/                  the four home screen widgets, in Glance
     ├── picker/                  GET_CONTENT audio picker
     └── permission/              permission gate
 
@@ -382,6 +385,54 @@ names them.
 
 ---
 
+## Widgets
+
+Four of them, in Jetpack Glance: *Now Playing* (2×2 and 4×2), *Controls* (4×1),
+*Liked Songs* (2×2) and *Lyric Line* (4×1). They live in `ui/widget/`.
+
+The constraint that shapes all of it is that **a widget is not the app**. It is
+`RemoteViews` drawn by the launcher's process, frequently while Choir's own
+process is dead. It cannot hold a `MediaController`, observe a `StateFlow`, or
+ask the player anything at all.
+
+So there is a `WidgetSnapshot` — a dozen short strings in preferences, written
+by `playback/WidgetPublisher` on the player's own callbacks, and the only thing
+a widget reads. A widget drawn after a reboot shows the track that was playing
+before it, with a play button that resumes it.
+
+### Nothing polls
+
+`updatePeriodMillis` is `0` on all four. Every redraw is provoked by something
+the player did, which leaves one hard case: the lyric line changes while
+nothing else does.
+
+That could have been a one-second tick. It is not, because it does not need to
+be — an `.lrc` states the time of every line, so the next change is a fact to
+read rather than a condition to poll for. `WidgetPublisher` sleeps exactly until
+the next line and wakes once. One wake per line, only while playing, only when a
+Lyric Line widget is actually on a home screen, and none at all past the last
+line of the song. `lyricWaitFrom` is that arithmetic, and it is unit tested.
+
+### Taps
+
+Glance callbacks run in Choir's process, so a button builds a short-lived
+`MediaController`, says one thing, and releases it. Binding *starts* the service
+if it is not running, which is what makes the resume button work after a reboot
+— a media-button intent would need the service already alive and would say
+nothing back about whether it arrived.
+
+### What does not carry over
+
+The design tokens do; the components do not. `ui/widget/WidgetTheme.kt` restates
+the palette from `ui/theme`, but there is no `MaterialTheme`, no
+`CompositionLocal` across the process boundary, and no EB Garamond or Inter —
+the launcher cannot load a typeface out of another app's assets. Hierarchy is
+carried by weight, size and the serif/sans split alone. The icons are duplicated
+as vector drawables in `res/drawable/ic_widget_*` for the same reason: an
+`ImageVector` built in Compose cannot cross into `RemoteViews`.
+
+---
+
 ## Design language
 
 Monochrome, with type doing the work colour normally would.
@@ -443,7 +494,7 @@ upgrade an install signed with another — generate the real key once and keep i
 
 ## Testing
 
-**367 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
+**383 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
 `./gradlew test`, or `make test`.
 
 The tests are concentrated where the risk is, and the risk is not in the UI. It
@@ -458,6 +509,7 @@ specifications that were widely ignored.
 | `playback/Aiff*`, `SwapSampleBytes`, `ExtendedFloat` | 18 | IFF chunk padding, byte order, and the 80-bit float a sample rate is stored as |
 | `playback/AudioFormatsTest` | 26 | format identification from extension and MIME, and which formats can actually play |
 | `playback/ChoirCodecContextTest` | 5 | the sixteen bytes the extractors write and the vendored decoder reads |
+| `ui/widget/WidgetSnapshotTest` + `playback/WidgetPublisherTest` | 16 | what survives between the player writing a snapshot and a launcher drawing it hours later, and the arithmetic that keeps the lyric widget from becoming a timer |
 | `data/lyrics/tags/Id3v2ReaderTest` | 18 | USLT, SYLT and TXXX frames across ID3v2.2/2.3/2.4; synchsafe sizes; unsynchronisation; UTF‑16 BOMs; descriptors with no terminator |
 | `data/lyrics/tags/VorbisCommentReaderTest` | 11 | FLAC metadata blocks, Ogg page and packet reassembly across 255-byte segment boundaries |
 | `data/lyrics/tags/Mp4ReaderTest` + `IffReaderTest` | 24 | MP4 `©lyr` and `----` atoms, `moov` after `mdat`, streams whose `skip` does nothing, RIFF and AIFF chunk padding and byte order |
@@ -529,7 +581,7 @@ receive an inset.
 | **0.2.0** ✅ | Full browse port: albums, artists, search, drill-downs, audio picker. |
 | **0.3.0** ✅ | Lyrics from tags, sidecars and — opt in — the network. Liked songs and editable playlists in Room. FFmpeg decoding, an AIFF reader, and a library that stops hiding what the media scanner could not parse. |
 | **0.4.0** ✅ | Folder browsing via SAF, reaching the files MediaStore never indexed. Demuxers for WavPack, APE and WMA, and the JNI entry point their decoders need — see [Audio formats](#audio-formats) for why a decoder alone is not enough. |
-| 0.5.0 | Home screen widgets in Jetpack Glance, driven by the media session. |
+| **0.5.0** ✅ | Four home screen widgets in Jetpack Glance, driven by the media session — including a lyric line that waits for the next word rather than polling for it. |
 | 0.5.3 | The real UI: iPod-style hierarchy, paper-grain texture overlay, hand-sketched icon set. |
 | 0.5.5 | Tree-shaken FFmpeg build, targeting a 60–80% smaller binary. |
 | 0.6.0 | Stabilisation, accessibility, RTL. Peer-to-peer sharing over Bluetooth/Wi-Fi Direct using a `.chmf` bundle. |

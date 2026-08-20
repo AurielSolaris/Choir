@@ -27,8 +27,8 @@ android {
         applicationId = "app.auriel.choir"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -111,6 +111,11 @@ dependencies {
     implementation(libs.androidx.material3)
 
     implementation(libs.androidx.navigation.compose)
+
+    // Home screen widgets. Glance composes to RemoteViews, so none of the app's
+    // own components can be reused inside one — only the design tokens.
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)

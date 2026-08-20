@@ -191,4 +191,31 @@
     <string name="cd_add_folder">Add a folder</string>
     <string name="cd_rescan_folders">Check folders again</string>
     <string name="cd_remove_folder">Remove this folder</string>
+    <!-- Home screen widgets. The descriptions are what the widget picker
+         shows, so each says what the widget is for rather than naming it
+         twice. -->
+    <string name="widget_now_playing">Now Playing</string>
+    <string name="widget_now_playing_description">The song, its cover, and the controls for it.</string>
+    <string name="widget_compact_controls">Controls</string>
+    <string name="widget_compact_controls_description">A single row: the song, and play, pause and skip.</string>
+    <string name="widget_liked_songs">Liked Songs</string>
+    <string name="widget_liked_songs_description">Shuffle the songs you have liked.</string>
+    <string name="widget_lyric_line">Lyric Line</string>
+    <string name="widget_lyric_line_description">The line being sung, for songs with synced words.</string>
+
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_next">Next track</string>
+    <string name="widget_previous">Previous track</string>
+    <string name="widget_like">Like this track</string>
+    <string name="widget_unlike">Remove from Liked Songs</string>
+    <string name="widget_unknown_track">Unknown track</string>
+    <string name="widget_nothing_played">Nothing playing. Tap to open Choir.</string>
+    <string name="widget_nothing_liked">No liked songs yet. Tap to open Choir.</string>
+    <string name="widget_no_synced_lyrics">No synced words for</string>
+
+    <plurals name="widget_liked_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
 </resources>

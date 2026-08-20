@@ -90,6 +90,67 @@
             </intent-filter>
         </service>
 
+        <!--
+          The home screen widgets.
+
+          Each is a GlanceAppWidgetReceiver, which is an ordinary broadcast
+          receiver the launcher talks to. Exported because the launcher is a
+          different application and has to be able to reach them; they accept
+          nothing but the platform's own APPWIDGET_UPDATE, and every control on
+          them runs through Glance's own callback mechanism inside this app.
+
+          None of them declares an update period. Every redraw is provoked by
+          something the player did — see WidgetPublisher — so a polling period
+          would only wake the device to redraw what had not changed.
+        -->
+        <receiver
+            android:name=".ui.widget.NowPlayingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_now_playing">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_now_playing_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.CompactControlsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_compact_controls">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_compact_controls_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.LikedSongsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_liked_songs">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_liked_songs_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.LyricLineWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_lyric_line">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_lyric_line_info" />
+        </receiver>
+
     </application>
 
 </manifest>

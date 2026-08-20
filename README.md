@@ -22,8 +22,9 @@ picked — nothing about you, and nothing about the rest of your library.
 The icon lives at [`docs/icon.svg`](docs/icon.svg) (source) and
 [`docs/icon.png`](docs/icon.png) (512px, for embedding).
 
-**Status: v0.4.0** — browsing, playlists, liked songs, lyrics, folder browsing
-and multi-format audio; see [the roadmap](DOCS.md#roadmap) for what is coming.
+**Status: v0.5.0** — browsing, playlists, liked songs, lyrics, folder browsing,
+multi-format audio and home screen widgets; see [the roadmap](DOCS.md#roadmap)
+for what is coming.
 
 <p align="center">
   <img src="docs/screenshots/library.png" width="30%" alt="Track list">
@@ -49,6 +50,9 @@ and multi-format audio; see [the roadmap](DOCS.md#roadmap) for what is coming.
   brings its own readers for AIFF, WavPack, APE and ASF, because a decoder alone
   cannot open a container. Files the media scanner could not read are listed
   rather than hidden, and a track that will not play says why
+- **Widgets** — four for the home screen: now playing, a one-row transport
+  strip, a liked-songs shuffle, and the line of the song being sung. None of
+  them polls; they are redrawn when the player says something changed
 - **Search** — instant filtering across titles, albums and artists
 - **Picker** — Choir answers other apps' "choose a track" requests
 - **Design** — monochrome throughout, with EB Garamond for content and Inter for
@@ -58,14 +62,15 @@ and multi-format audio; see [the roadmap](DOCS.md#roadmap) for what is coming.
 
 | Version | What it added |
 | --- | --- |
-| **0.4.0** | **Folder browsing** through a directory you grant, which is how you reach the files Android's media scanner refuses to index at all. **Demuxers written from scratch** for WavPack, Monkey's Audio and ASF — the three containers whose decoders shipped in 0.3.0 and played nothing, because nothing could open them. Exact seeking in APE, which keeps a seek table at the front of the file. |
+| **0.5.0** | **Home screen widgets**, four of them, in Jetpack Glance. Now Playing at 2×2 and 4×2, a 4×1 transport strip, a Liked Songs shuffle, and a Lyric Line that shows the words as they are sung. Nothing polls: the widgets are redrawn when playback changes, and the lyric line sleeps until the next line rather than ticking. They keep working with the app closed — a widget drawn after a reboot offers to resume what was playing. |
+| 0.4.0 | **Folder browsing** through a directory you grant, which is how you reach the files Android's media scanner refuses to index at all. **Demuxers written from scratch** for WavPack, Monkey's Audio and ASF — the three containers whose decoders shipped in 0.3.0 and played nothing, because nothing could open them. Exact seeking in APE, which keeps a seek table at the front of the file. |
 | 0.3.0 | **Lyrics** — read from `.lrc` sidecars and from ID3v2, Vorbis, MP4 and WAV tags, scrolled in time with the song, down to the word where the file says so. Optionally fetched from LRCLIB, NetEase, Musixmatch or your own service, off by default and in an order you set. **Liked songs** and **editable playlists**, both re-linked if Android renumbers your library. `.m3u` import and export. **FFmpeg decoding** for ALAC and Dolby, an **AIFF reader** written from scratch, and a library that stops hiding the files Android's media scanner could not parse. Settings. |
 | 0.2.0 | Albums, artists and search; drill-down screens; the audio picker other apps can call. |
 | 0.1.0 | The port itself — Kotlin, Compose and Media3 in place of the AOSP Music app. Track list, now playing, transport controls, media notification, and a queue that survives a restart. |
 
 ## Testing
 
-**367 unit tests**, run with `./gradlew test`. JUnit 5 with MockK and
+**383 unit tests**, run with `./gradlew test`. JUnit 5 with MockK and
 Robolectric; Espresso and Compose UI testing for instrumented tests.
 
 The weight sits where the bugs are — parsing other people's files, and deciding
@@ -82,6 +87,7 @@ what a file *is*:
 | Folder browsing | 30 | SAF document paths, tree building, `.nomedia`, and the files MediaStore never indexed |
 | Audio formats | 31 | extension and MIME identification, which formats can actually play, and the codec fields the decoder is handed |
 | Likes, queue, settings, utils | 64 | persistence, re-linking after a renumber, grouping, formatting |
+| Widgets | 16 | what survives between writing a snapshot and drawing it, and the arithmetic that keeps the lyric widget from becoming a timer |
 
 Two things are deliberately not mocked. Parsing runs against byte fixtures built
 in the tests themselves — tags, and now whole containers — so a fixture cannot
