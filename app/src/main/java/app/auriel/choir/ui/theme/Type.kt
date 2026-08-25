@@ -91,13 +91,27 @@ val ChoirTypography = Typography(
         lineHeight = 32.sp,
         letterSpacing = 0.sp,
     ),
-    // Track title in a list row.
+    // Track title in a list row, and — at a taller line height — every line of
+    // a lyric. See ChoirTypography.lyric.
     titleMedium = TextStyle(
         fontFamily = EbGaramond,
         fontWeight = FontWeight.Normal,
         fontSize = 19.sp,
         lineHeight = 25.sp,
         letterSpacing = 0.sp,
+    ),
+    // Body text at reading size — a dialog's field, a sheet's label.
+    //
+    // Defined rather than left to Material's default, which is the point: an
+    // undeclared slot does not fall back to Inter, it falls back to Roboto, and
+    // a single Roboto string in a screen set in Inter and Garamond is visible.
+    // Every slot Choir uses is declared here for that reason.
+    bodyLarge = TextStyle(
+        fontFamily = Inter,
+        fontWeight = FontWeight.Light,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.15.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = Inter,
@@ -140,3 +154,19 @@ val ChoirTypography = Typography(
         fontFeatureSettings = TABULAR_FIGURES,
     ),
 )
+
+/**
+ * One line of a lyric, whether or not it is the line being sung.
+ *
+ * The same face, size and weight for all of them, deliberately. Lyrics are
+ * content, so they are set in Garamond like every other piece of content — and
+ * a pane that switched font or size for the active line would reflow the whole
+ * column each time the song moved on, quite apart from reading as two different
+ * documents interleaved. What marks the current line is ink against grey, and
+ * where the pane holds it on screen.
+ *
+ * Line height is looser than the list row it derives from: a lyric is read as
+ * verse, several lines at a time, not scanned as a row.
+ */
+val Typography.lyric: TextStyle
+    get() = titleMedium.copy(lineHeight = 30.sp)

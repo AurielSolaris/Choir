@@ -30,11 +30,18 @@ import kotlinx.coroutines.withContext
  *  3. **A service the user opted in to**, if they did. Off by default; see
  *     [OnlineLyricsSource] for every condition that has to hold first.
  *
- * A synced source always beats an unsynced one regardless of where it came
- * from, so an embedded `SYLT` frame wins over a plain-text sidecar. The local
- * sources are tried first and the network last — not only because a file on the
- * device is more trustworthy than a guess from a database, but because the
- * common case should never leave the device at all.
+ * **A local source always wins.** If the file has words — in a sidecar or in
+ * its own tags — the network is never asked, even when what is on the device is
+ * plain text and a service might have offered a timed version of the same song.
+ * Someone put those words next to that file, or in it; a lookup keyed on a
+ * title and an artist is a guess about which recording this is, and a guess
+ * does not get to overrule the thing itself. The practical half of the same
+ * argument: the common case then never leaves the device at all.
+ *
+ * Between the two *local* sources, timed beats untimed — an embedded `SYLT`
+ * frame wins over a plain-text sidecar, and a timed `.lrc` wins over an
+ * untimed tag. Both are the file's own words, so there is nothing to defer to
+ * and the more useful one is simply better.
  */
 class LyricsRepository(
     private val context: Context,
@@ -51,29 +58,24 @@ class LyricsRepository(
     suspend fun forTrack(track: Track): Lyrics? = withContext(ioDispatcher) {
         cache.get(track.id)?.let { return@withContext it.lyrics }
 
-        val local = sidecar(track).pickBetter(::embedded, track)
-        // The network is asked only when the device has nothing timed to offer:
-        // a synced lyric already on disk is better than anything a lookup could
-        // return, and not asking is always the cheaper answer.
-        val found = if (local != null && local.isSynced) local else local.pickBetter(::fetched, track)
+        // Sidecar and tags first, and the better of the two wins. The tags are
+        // only read when they could still change the answer: parsing them means
+        // opening the audio file itself, and a synced sidecar has already won.
+        val sidecar = sidecar(track)
+        val local = if (sidecar != null && sidecar.isSynced) {
+            sidecar
+        } else {
+            betterOf(sidecar, embedded(track))
+        }
+
+        // The network is asked only when the file itself had nothing at all.
+        // Not "nothing timed": an untimed lyric on disk still beats a synced
+        // one from a lookup, because the lookup is a guess about which
+        // recording this is and the file is not.
+        val found = local ?: fetched(track)
 
         cache.put(track.id, Result(found))
         found
-    }
-
-    /**
-     * Keeps [this] unless it is unsynced and the fallback turns out to be
-     * timed, in which case the timed one wins.
-     */
-    private inline fun Lyrics?.pickBetter(fallback: (Track) -> Lyrics?, track: Track): Lyrics? {
-        if (this != null && isSynced) return this
-        val other = fallback(track)
-        return when {
-            other == null -> this
-            this == null -> other
-            other.isSynced -> other
-            else -> this
-        }
     }
 
     // --- Sidecars ------------------------------------------------------------
@@ -208,4 +210,24 @@ class LyricsRepository(
         /** `.lrc` is the timed one; `.txt` is a plain lyric sheet. */
         val SIDECAR_EXTENSIONS = listOf("lrc", "txt")
     }
+}
+
+/**
+ * The better of two lyrics from equally trustworthy places.
+ *
+ * Timed beats untimed; anything beats nothing; [first] keeps the tie. Only ever
+ * called with two *local* sources — a sidecar and a tag — because the choice
+ * between the file and the network is not this question. That one is decided by
+ * where the words came from rather than by what they contain, and is made in
+ * [LyricsRepository.forTrack].
+ *
+ * Top-level and internal so it can be tested without a Context, which is the
+ * only reason it is not a private method.
+ */
+internal fun betterOf(first: Lyrics?, second: Lyrics?): Lyrics? = when {
+    first == null -> second
+    second == null -> first
+    first.isSynced -> first
+    second.isSynced -> second
+    else -> first
 }
