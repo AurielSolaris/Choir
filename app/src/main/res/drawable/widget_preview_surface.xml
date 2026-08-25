@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 AurielSolaris
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Choir's paper, with the corner radius a widget is drawn with. Matches the
+  16dp cornerRadius that widgetSurface() applies in ui/widget/ChoirWidgets.kt.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_background" />
+    <corners android:radius="16dp" />
+</shape>

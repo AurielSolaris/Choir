@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.auriel.choir.core.MusicLog
@@ -41,11 +42,41 @@ data class PlaybackUiState(
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
+    /**
+     * What is queued, **in the order it will actually play**.
+     *
+     * Not the order the items were added in. With shuffle on, the player walks
+     * its own scrambled order and this list is that order, so the queue popup
+     * shows what comes next rather than what came next before the dice were
+     * rolled. See [PlaybackConnection.queueOf].
+     */
+    val queue: List<QueueItem> = emptyList(),
+    /** Where in [queue] the current track sits, or -1 while nothing is loaded. */
+    val queueIndex: Int = -1,
 ) {
     /** 0f..1f, and 0f rather than a divide-by-zero while a duration is unknown. */
     val progress: Float
         get() = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+
+    /** How many tracks are still to come, the current one excluded. */
+    val remainingInQueue: Int
+        get() = if (queueIndex < 0) 0 else (queue.size - queueIndex - 1).coerceAtLeast(0)
 }
+
+/**
+ * One entry in the queue popup.
+ *
+ * [mediaIndex] is the player's own index for the item, which is *not* this
+ * entry's position in the list: with shuffle on the two differ, and jumping to
+ * a track means naming the index the player knows it by.
+ */
+data class QueueItem(
+    val mediaIndex: Int,
+    val trackId: Long?,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+)
 
 data class NowPlaying(
     val trackId: Long?,
@@ -237,6 +268,22 @@ class PlaybackConnection(private val context: Context) {
         publish()
     }
 
+    /**
+     * Jumps to a queue entry, by the index the *player* knows it by.
+     *
+     * [QueueItem.mediaIndex], not the entry's place in the popup — with shuffle
+     * on those are different numbers, and only one of them means anything to
+     * the player.
+     */
+    fun playQueueItem(mediaIndex: Int) {
+        val player = controller ?: return
+        if (mediaIndex !in 0 until player.mediaItemCount) return
+
+        player.seekToDefaultPosition(mediaIndex)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        player.play()
+    }
+
     fun toggleShuffle() {
         val player = controller ?: return
         player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -257,9 +304,12 @@ class PlaybackConnection(private val context: Context) {
     private fun publish() {
         val player = controller
         if (player == null) {
+            queueCache = null
             _state.value = PlaybackUiState()
             return
         }
+
+        val queue = queueOf(player)
 
         _state.value = PlaybackUiState(
             isConnected = true,
@@ -272,9 +322,62 @@ class PlaybackConnection(private val context: Context) {
             repeatMode = player.repeatMode,
             hasNext = player.hasNextMediaItem(),
             hasPrevious = player.hasPreviousMediaItem(),
+            queue = queue,
+            queueIndex = queue.indexOfFirst { it.mediaIndex == player.currentMediaItemIndex },
         )
 
         if (player.isPlaying) startTicking() else stopTicking()
+    }
+
+    // --- The queue ---------------------------------------------------------
+
+    /**
+     * The queue in play order, rebuilt only when it can have changed.
+     *
+     * `publish()` runs on every player event, and a queue can be the whole
+     * library — rebuilding a few thousand entries each time the play/pause
+     * state flips would be work for nothing. A [Timeline] is immutable and
+     * replaced wholesale when the queue changes, so identity is a sound guard;
+     * shuffle is tracked beside it because toggling it reorders the list
+     * without touching the timeline.
+     */
+    private class QueueCache(
+        val timeline: Timeline,
+        val shuffled: Boolean,
+        val items: List<QueueItem>,
+    )
+
+    private var queueCache: QueueCache? = null
+
+    private fun queueOf(player: Player): List<QueueItem> {
+        val timeline = player.currentTimeline
+        val shuffled = player.shuffleModeEnabled
+
+        queueCache?.let { cached ->
+            if (cached.timeline === timeline && cached.shuffled == shuffled) return cached.items
+        }
+
+        val window = Timeline.Window()
+        val items = playOrder(
+            count = timeline.windowCount,
+            first = timeline.getFirstWindowIndex(shuffled),
+            // REPEAT_MODE_OFF regardless of what the player is set to: this is
+            // the order of the queue, and repeat is a thing that happens when
+            // it runs out, not a reason to list anything twice.
+            next = { index -> timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffled) },
+        ).map { index ->
+            val item = timeline.getWindow(index, window).mediaItem
+            QueueItem(
+                mediaIndex = index,
+                trackId = item.trackIdOrNull(),
+                title = item.mediaMetadata.title?.toString().orEmpty(),
+                artist = item.mediaMetadata.artist?.toString().orEmpty(),
+                durationMs = window.durationMs.takeIf { it != C.TIME_UNSET } ?: 0L,
+            )
+        }
+
+        queueCache = QueueCache(timeline, shuffled, items)
+        return items
     }
 
     private fun startTicking() {
@@ -314,4 +417,31 @@ class PlaybackConnection(private val context: Context) {
          */
         const val PROGRESS_TICK_MS = 250L
     }
+}
+
+/**
+ * Walks a timeline into the order it will play.
+ *
+ * Pulled out as a plain function over two numbers and a step, because the
+ * interesting part has nothing to do with Media3: it is a linked list that a
+ * caller may have made circular. With repeat on, "the index after the last one"
+ * is the first one again, and following that blindly builds a list that never
+ * ends — so the walk stops at [count] steps, at an unset index, and at any
+ * index it has already visited.
+ *
+ * Returns indices, not items, so the caller decides what a window is worth
+ * reading out of.
+ */
+internal fun playOrder(count: Int, first: Int, next: (Int) -> Int): List<Int> {
+    if (count <= 0 || first == C.INDEX_UNSET) return emptyList()
+
+    val order = ArrayList<Int>(count)
+    val seen = HashSet<Int>(count)
+    var index = first
+
+    while (index != C.INDEX_UNSET && order.size < count && seen.add(index)) {
+        order.add(index)
+        index = next(index)
+    }
+    return order
 }

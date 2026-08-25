@@ -34,15 +34,17 @@ import androidx.compose.ui.unit.dp
 import app.auriel.choir.data.lyrics.LyricLine
 import app.auriel.choir.data.lyrics.Lyrics
 import app.auriel.choir.ui.theme.LocalChoirColors
+import app.auriel.choir.ui.theme.lyric
 
 /**
  * The words, scrolling themselves.
  *
- * Timed lyrics light the current line and keep it about a third of the way down
- * the pane, which is where the eye expects to read from; tapping a line seeks
- * to it. Where the file carries word timings the highlight moves through the
- * line as it is sung. Untimed lyrics are the same list with nothing lit and no
- * movement.
+ * Every line is set identically — the same face, size and weight whether or not
+ * it is the one being sung. Timed lyrics mark the current line in ink against
+ * grey and keep it about a third of the way down the pane, which is where the
+ * eye expects to read from; tapping a line seeks to it. Where the file carries
+ * word timings the ink moves through the line as it is sung. Untimed lyrics are
+ * the same list with nothing marked and no movement.
  *
  * Manual scrolling wins: dragging suspends the automatic follow for a few
  * seconds so that reading ahead does not turn into a fight with the player.
@@ -131,11 +133,12 @@ private fun LyricRow(
 
     Text(
         text = text,
-        style = if (isActive) {
-            MaterialTheme.typography.titleMedium
-        } else {
-            MaterialTheme.typography.bodyLarge
-        },
+        // One style for every line, sung or not. The face and the size do not
+        // change as the song moves through the pane — see ChoirTypography.lyric
+        // — so the column never reflows and the whole lyric reads as one
+        // document. The current line is marked in ink against grey, and by
+        // where the pane holds it.
+        style = MaterialTheme.typography.lyric,
         color = when {
             isActive -> colors.onBackground
             isSynced -> colors.muted

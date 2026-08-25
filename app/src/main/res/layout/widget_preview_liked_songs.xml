@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 AurielSolaris
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  What the widget picker shows before the widget is placed.
+
+  A static layout, not the widget: the picker draws this without starting a
+  Glance session, so it holds no snapshot and reads nothing. Its job is to make
+  the four distinguishable from each other at a glance, in Choir's own type and
+  paper rather than as four copies of the app icon.
+
+  Plain RemoteViews widgets only — LinearLayout, TextView, ImageView. Anything
+  the launcher's process cannot inflate silently shows as nothing at all.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_surface"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <ImageView
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_widget_heart_filled"
+        android:tint="@color/widget_on_background" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:fontFamily="serif"
+        android:maxLines="1"
+        android:text="@string/widget_liked_songs"
+        android:textColor="@color/widget_on_background"
+        android:textSize="15sp" />
+
+    <ImageView
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginTop="6dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_widget_shuffle"
+        android:tint="@color/widget_muted" />
+</LinearLayout>

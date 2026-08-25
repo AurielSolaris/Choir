@@ -389,6 +389,7 @@ private fun ChoirNavigation(
                     onSeek = playback::seekTo,
                     onToggleShuffle = playback::toggleShuffle,
                     onCycleRepeat = playback::cycleRepeatMode,
+                    onPlayQueueItem = playback::playQueueItem,
                     isLiked = playingTrack != null && playingTrack.id in likedIds,
                     onToggleLike = playingTrack?.let { track ->
                         { viewModel.toggleLike(track) }

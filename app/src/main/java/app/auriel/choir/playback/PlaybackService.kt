@@ -19,6 +19,8 @@ import app.auriel.choir.R
 import app.auriel.choir.core.MusicLog
 import app.auriel.choir.core.Permissions
 import app.auriel.choir.data.TrackResolver
+import app.auriel.choir.data.likes.LikesRepository
+import app.auriel.choir.data.lyrics.LyricsRepository
 import app.auriel.choir.data.queue.QueueRepository
 import app.auriel.choir.data.queue.SavedQueue
 import kotlinx.coroutines.CoroutineScope
@@ -42,12 +44,15 @@ class PlaybackService : MediaSessionService() {
 
     private val queueRepository: QueueRepository by inject()
     private val trackResolver: TrackResolver by inject()
+    private val likesRepository: LikesRepository by inject()
+    private val lyricsRepository: LyricsRepository by inject()
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var saveJob: Job? = null
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    private var widgetPublisher: WidgetPublisher? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -86,6 +91,19 @@ class PlaybackService : MediaSessionService() {
             },
         )
 
+        // The home screen widgets have no way to ask the player anything, so
+        // what it is doing has to be written down for them. Attached last: it
+        // publishes on construction, and there is nothing to publish until the
+        // session exists.
+        widgetPublisher = WidgetPublisher(
+            context = this,
+            scope = scope,
+            likes = likesRepository,
+            lyricsRepository = lyricsRepository,
+            trackResolver = trackResolver,
+            player = { player },
+        ).also { it.attach() }
+
         restoreSavedQueue()
     }
 
@@ -107,6 +125,10 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         saveQueueNow()
+        // Left holding the last track rather than cleared: a widget drawn after
+        // the process dies should offer to resume it, not pretend it never was.
+        widgetPublisher?.detach()
+        widgetPublisher = null
         scope.cancel()
         mediaSession?.release()
         mediaSession = null
