@@ -57,6 +57,9 @@ import app.auriel.choir.ui.theme.LocalChoirColors
  *
  * Art on top, metadata under it, a scrubber, then one row of transport
  * controls — the iPod-ish stack the coming restyle builds on.
+ *
+ * Two things open over it rather than beside it: the lyric pane, which takes
+ * the artwork's room, and the queue, which is a sheet — see [QueueSheet].
  */
 @Composable
 fun NowPlayingScreen(
@@ -68,6 +71,7 @@ fun NowPlayingScreen(
     onSeek: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    onPlayQueueItem: (Int) -> Unit,
     isLiked: Boolean,
     onToggleLike: (() -> Unit)?,
     lyrics: LyricsState,
@@ -79,6 +83,20 @@ fun NowPlayingScreen(
     // Whether the pane is open is the user's choice and should outlive a
     // rotation, but not a trip back to the library.
     var showLyrics by rememberSaveable { mutableStateOf(false) }
+
+    // The queue is a popup, so it does not survive a rotation on purpose: it is
+    // opened to answer a question, and the answer is on screen behind it.
+    var showQueue by remember { mutableStateOf(false) }
+
+    if (showQueue) {
+        QueueSheet(
+            state = state,
+            onPlayQueueItem = onPlayQueueItem,
+            onToggleShuffle = onToggleShuffle,
+            onCycleRepeat = onCycleRepeat,
+            onDismiss = { showQueue = false },
+        )
+    }
 
     Column(
         modifier = modifier
@@ -107,6 +125,23 @@ fun NowPlayingScreen(
                 color = colors.muted,
                 modifier = Modifier.weight(1f),
             )
+
+            // Shown whenever there is a queue to show, which is whenever
+            // anything is loaded — including a queue of one, where it still
+            // answers "is there more after this?" with a yes or a no.
+            if (state.queue.isNotEmpty()) {
+                Icon(
+                    imageVector = ChoirIcons.Queue,
+                    contentDescription = stringResource(R.string.cd_queue),
+                    tint = colors.onBackground,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { showQueue = true }
+                        .padding(12.dp)
+                        .size(22.dp)
+                        .alpha(0.45f),
+                )
+            }
 
             // The toggle appears only for a track that actually has words, so
             // it explains itself and costs nothing on the tracks that do not.

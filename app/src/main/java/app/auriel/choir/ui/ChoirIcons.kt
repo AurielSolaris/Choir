@@ -205,6 +205,20 @@ object ChoirIcons {
         )
     }
 
+    /** The play queue: a short stack of lines, with a note where the last would be. */
+    val Queue: ImageVector by lazy {
+        icon(
+            "Queue",
+            "M15,6H3v2h12V6zM15,10H3v2h12v-2zM3,16h8v-2H3V16zM17,6v8.18C16.69,14.07 " +
+                "16.35,14 16,14c-1.66,0 -3,1.34 -3,3s1.34,3 3,3 3,-1.34 3,-3V8h3V6h-5z",
+        )
+    }
+
+    /** Marks the row in the queue that is playing now. */
+    val PlayingMark: ImageVector by lazy {
+        icon("PlayingMark", "M8,5v14l11,-7z")
+    }
+
     private fun icon(name: String, pathData: String): ImageVector =
         ImageVector.Builder(
             name = name,
