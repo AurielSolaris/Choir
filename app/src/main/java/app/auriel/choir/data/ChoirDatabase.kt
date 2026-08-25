@@ -55,7 +55,7 @@ abstract class ChoirDatabase : RoomDatabase() {
         private const val NAME = "choir.db"
 
         /** v0.3.0 added liked songs. */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `liked_tracks` (" +
@@ -70,7 +70,7 @@ abstract class ChoirDatabase : RoomDatabase() {
         }
 
         /** v0.3.0 added Choir's own playlists. */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `playlists` (" +
@@ -106,7 +106,7 @@ abstract class ChoirDatabase : RoomDatabase() {
          * references to it — see [FolderFileEntity] for why there is nothing to
          * refer to. Dropping it would only cost a rescan.
          */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `folder_roots` (" +
@@ -143,9 +143,19 @@ abstract class ChoirDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Every migration that has ever shipped, in order.
+         *
+         * Named rather than passed inline so the instrumented migration test
+         * can run *these* — the array the app installs with — instead of its
+         * own copy of the list, which is the copy that would go stale.
+         */
+        internal val MIGRATIONS: Array<Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+
         fun build(context: Context): ChoirDatabase =
             Room.databaseBuilder(context.applicationContext, ChoirDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(*MIGRATIONS)
                 // Likes are user data now, so upgrades migrate properly rather
                 // than starting over. A *downgrade* only happens when someone
                 // sideloads backwards, and there is no schema to migrate to.

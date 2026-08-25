@@ -38,3 +38,13 @@
 -dontwarn com.google.common.**
 -dontwarn javax.annotation.**
 -dontwarn org.checkerframework.**
+
+# Kept for the instrumented tests, which run against this build.
+#
+# Kotlin's Intrinsics class — every null check the compiler emits calls into it —
+# ships inside the app APK, and the test APK is minified separately against the
+# app's mapping rather than carrying its own copy. R8 shrinks Intrinsics down to
+# the overloads the *app* happens to use, so a check the test code emits and the
+# app does not is a NoSuchMethodError in the runner's first instruction, before
+# any test starts. It is a handful of tiny static methods.
+-keep class kotlin.jvm.internal.Intrinsics { *; }
