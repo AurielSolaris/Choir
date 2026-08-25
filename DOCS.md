@@ -9,6 +9,7 @@ can be made without reading the whole tree first.
 - [Source layout](#source-layout)
 - [How the library is loaded](#how-the-library-is-loaded)
 - [How playback works](#how-playback-works)
+- [Lyrics](#lyrics)
 - [Widgets](#widgets)
 - [Design language](#design-language)
 - [Building and running](#building-and-running)
@@ -145,12 +146,16 @@ app/src/main/java/app/auriel/choir/
     ├── library/                 tabbed browser + the shared ViewModel
     ├── detail/                  album and artist drill-downs, named track lists
     ├── search/                  instant search
-    ├── nowplaying/              full player and the synced lyric pane
+    ├── nowplaying/              full player, the lyric pane, the queue sheet
     ├── settings/                the one screen that changes what Choir may do
     ├── folders/                 browsing by directory, through SAF
     ├── widget/                  the four home screen widgets, in Glance
     ├── picker/                  GET_CONTENT audio picker
     └── permission/              permission gate
+
+app/src/test/                   400 JVM tests, mirroring the tree above
+app/src/androidTest/            26 that need a device: migrations, widget
+                                declarations, the snapshot store, the player
 
 app/src/main/java/androidx/media3/decoder/ffmpeg/
                                 Media3's FFmpeg extension, vendored — two of
@@ -242,6 +247,35 @@ moved.
 Playing from any list queues *that* list. Tapping a track on an album queues the
 album; tapping a search result queues the results. This is what made the AOSP
 browsers feel coherent, and it is verified by checking the session queue length.
+
+### The queue, and the order it is in
+
+`PlaybackUiState.queue` is the queue **in play order** — not the order the items
+were added in. With shuffle on those are different lists, and a queue view
+showing the second one is describing bookkeeping rather than music.
+
+The player will not hand that order over as a list, so it is walked: start at
+`Timeline.getFirstWindowIndex(shuffled)` and follow `getNextWindowIndex` until
+it runs out. Two details make that safe.
+
+The walk asks for the next index with `REPEAT_MODE_OFF` regardless of what the
+player is actually set to. Repeat is what happens when the queue runs out, not a
+reason to list a track twice — and with `REPEAT_MODE_ALL` the timeline's "next"
+wraps, so following it as given never terminates. `playOrder` also stops at any
+index it has already seen and at the queue's length, which covers repeat-one
+(where every window's successor is itself) and any timeline that disagrees with
+itself. It takes the count and a step function rather than a `Timeline`, so all
+of that is unit tested without Media3 loaded.
+
+`QueueItem.mediaIndex` is the player's own index for an entry, which is not the
+entry's position in the list. Jumping to a track names the index the player
+knows it by; using the row's position would start a different song as soon as
+shuffle was on.
+
+Rebuilt only when it can have changed. `publish()` runs on every player event
+and a queue can be the whole library, so the result is cached against the
+`Timeline` instance and the shuffle flag — a timeline is immutable and replaced
+wholesale when the queue changes, which makes identity a sound guard.
 
 ---
 
@@ -359,7 +393,11 @@ size, which drops stub rows without dropping real songs, and:
 pinned FFmpeg tag, configures FFmpeg with `--disable-everything` plus an
 explicit decoder list, builds `libffmpegJNI.so` for the requested ABIs, strips
 it, and vendors the extension's five Java files into
-`app/src/main/java/androidx/media3/decoder/ffmpeg/`. About 2 MB per ABI.
+`app/src/test/                   400 JVM tests, mirroring the tree above
+app/src/androidTest/            26 that need a device: migrations, widget
+                                declarations, the snapshot store, the player
+
+app/src/main/java/androidx/media3/decoder/ffmpeg/`. About 2 MB per ABI.
 
 It is vendored rather than depended on because Google does not publish
 `media3-decoder-ffmpeg` to Maven. `ChoirRenderersFactory` never names those
@@ -382,6 +420,35 @@ Moving to a newer Media3 tag means re-applying the additions in `FfmpegLibrary`
 (MIME type to codec name) and `FfmpegAudioDecoder` (the codec context) by hand.
 Both are marked `Choir's addition` in the source, and `tools/build-ffmpeg.sh`
 names them.
+
+---
+
+## Lyrics
+
+Three places are searched: a `.lrc` or `.txt` sidecar next to the file, the
+file's own tags, and — only if the user switched it on — a service.
+
+**A local source always wins.** If the file has words, in a sidecar or in its
+own tags, the network is never asked, even when what is on the device is plain
+text and a service might have offered a timed version of the same song. Someone
+put those words next to that file, or in it; a lookup keyed on a title, an
+artist and a duration is a guess about which recording this is, and a guess does
+not get to overrule the thing itself. The practical half of the same argument is
+that the common case then never leaves the device at all.
+
+Before 0.5.0 that was not quite the rule: a synced result from a provider beat
+an unsynced one on disk, on the reasoning that timing is more useful. It is, but
+not at the price of showing someone a different take's words over their file.
+
+Between the two *local* sources, timed beats untimed — an embedded `SYLT` frame
+wins over a plain-text sidecar, a timed `.lrc` over an untimed tag. Both are the
+file's own words, so there is nothing to defer to and the more useful one is
+simply better. `betterOf` is that choice, and it is a pure function so it can be
+tested without a `Context`. The sidecar keeps a tie: putting a `.lrc` beside a
+file is a more deliberate act than a tagger writing a lyric frame.
+
+Tags are read lazily. Parsing them means opening the audio file, so it only
+happens when it could still change the answer — a synced sidecar has already won.
 
 ---
 
@@ -440,6 +507,22 @@ So the snapshot is *observed* inside the composition, through
 This was found on a real home screen and could not have been found any other
 way; nothing in a unit test composes a widget.
 
+### The picker
+
+`previewLayout` on each provider, from API 31 on: a static layout in
+`res/layout/widget_preview_*.xml` that shows the widget's own shape in Choir's
+paper and type. It is plain `RemoteViews` — no Glance, no snapshot, nothing
+read — because the picker draws it without ever starting a session.
+
+It replaces what was there before, which was the launcher icon four times with
+four different labels under it. `previewImage` still points at that icon for
+Android 10 and 11, which have no `previewLayout` to read.
+
+The preview layouts are the one place the widget palette exists as resources
+(`values/colors.xml` and its night variant) rather than in
+`ui/widget/WidgetTheme.kt`. A picker inflating XML has no way to reach the
+Kotlin, and `WidgetTheme` stays the place the values are decided.
+
 ### Taps
 
 Glance callbacks run in Choir's process, so a button builds a short-lived
@@ -477,6 +560,18 @@ one file per family via `FontVariation`. Swapping either family is two lines in
 Colours live in `ui/theme/Theme.kt` as `ChoirColors` — background, surface, two
 ink levels, muted and divider — and are projected onto a Material 3 scheme so no
 stray platform colour can leak through a component.
+
+Every Material type slot Choir uses is declared in `Type.kt`. An undeclared one
+does not fall back to Inter — it falls back to Roboto, and a single Roboto string
+in a screen set in Inter and Garamond is visible. `bodyLarge` was undeclared
+until 0.5.0, which is why a lyric pane's inactive lines were in a different face
+from its active one.
+
+Lyrics are set through `ChoirTypography.lyric`, and **every line gets it** —
+the same face, size and weight whether or not it is the line being sung. A pane
+that changed type for the active line reflowed the whole column each time the
+song moved on, and read as two documents interleaved. What marks the current
+line is ink against grey, and where the pane holds it on screen.
 
 Icons are built from path data in `ui/ChoirIcons.kt` rather than pulled from a
 Material icons dependency, which is large and will be replaced by a hand-drawn
@@ -521,8 +616,9 @@ upgrade an install signed with another — generate the real key once and keep i
 
 ## Testing
 
-**383 unit tests**, plain JVM tests on JUnit 5 with MockK and Robolectric.
-`./gradlew test`, or `make test`.
+**400 unit tests** on JUnit 5 with MockK, plus **26 instrumented tests** on a
+device. `./gradlew test`, or `make test`; `./gradlew connectedReleaseAndroidTest`
+for the second set.
 
 The tests are concentrated where the risk is, and the risk is not in the UI. It
 is in reading files written by other programs, over thirty years, to
@@ -545,6 +641,8 @@ specifications that were widely ignored.
 | `data/playlist/*` | 36 | `.m3u` round trips, resolution by path then filename then metadata, ordering, renumbering, refusal of incomplete reorders |
 | `data/folders/*` + `data/model/FolderTreeTest` | 30 | SAF document paths, tree building, `.nomedia`, and the files the media scanner never indexed |
 | `data/RelinkTest` + `TrackResolverTest` | 16 | re-linking likes and playlist members after MediaStore renumbers the library; resolving a track from either source |
+| `playback/PlayOrderTest` | 11 | the walk that turns a timeline into the order it will play: shuffled, wrapped by repeat, repeat-one, and the circular cases that would otherwise never terminate |
+| `data/lyrics/LyricsPrecedenceTest` | 6 | which lyric wins between a sidecar and a tag, and the tie the sidecar keeps |
 | `data/likes`, `data/queue`, `data/settings`, `data/model`, `core` | 48 | persistence, defaults, grouping, formatting |
 
 Three choices are worth knowing about.
@@ -575,8 +673,51 @@ why `Track` resolves its artwork URI lazily rather than at class-init. It is
 also why `org.json` is a real test dependency: `android.jar`'s copy is a stub
 that returns nulls, and the lyric providers parse JSON.
 
-Instrumentation and Compose UI dependencies are declared but the suite is thin;
-UI behaviour is currently checked on a real device.
+### The 26 that need a device
+
+Some things cannot be answered on the JVM, and until 0.5.0 they were not being
+asked. `app/src/androidTest/` holds the ones that need real Android underneath
+them.
+
+| Suite | Tests | What it pins down |
+| --- | ---: | --- |
+| `data/ChoirDatabaseMigrationTest` | 6 | the three hand-written migrations, run against real SQLite: each step, the whole 1→4 chain a user who installed at 0.1.0 actually gets, the playlist cascade, and the unique index on `folder_files.trackId` |
+| `ui/widget/WidgetProviderInfoTest` | 6 | what the launcher is told — four providers installed, every one with a description and a preview, no update period on any of them, and the cell sizes each was designed for |
+| `ui/widget/WidgetSnapshotStoreTest` | 5 | the snapshot surviving a write and a read by a different reader, the clear that stops one track's lyric captioning the next, and the flow a Glance session observes actually firing |
+| `ui/NowPlayingScreenTest` | 9 | the player and the queue popup: that it opens, says whether it is shuffled and repeating, marks what is playing, and reports the *player's* index for a tapped row rather than the row's position |
+
+The migration tests are the ones that most needed writing. Room verifies a
+migration's result against the exported schema only when the SQL executes, and
+`MIGRATION_1_2` and its two successors are hand-written — so before this, a
+misspelt column was a compile-time success and an upgrade-time crash, taking
+somebody's likes and playlists with it.
+
+They run against the **release** variant (`testBuildType = "release"`), so what
+is tested is the build that ships: its resources, its manifest, its signing. R8
+is the one exception — it is switched off for an instrumented-test invocation
+and for nothing else. The test APK is minified separately and linked against the
+app's mapping, so every class the test code touches inside the app APK has to
+have survived the app's own shrink under the name the mapping gave it. It
+routinely has not: R8 trims Kotlin's `Intrinsics` to the overloads the app
+happens to use, drops `androidx.tracing.Trace` as unreachable, and each one is a
+`NoSuchMethodError` in the runner's first instruction. `assembleRelease` still
+minifies and shrinks exactly as before, so the R8 rules are verified every time
+the shipping build is made.
+
+Two smaller things had to be arranged before a Compose test would run at all,
+both consequences of there being two APKs in one process:
+
+- **The exception handler.** Compose's test rule runs every test inside
+  coroutines' `runTest`, which will not start until `ServiceLoader` finds
+  `ExceptionCollectorAsService`. That lookup goes through coroutines-core's own
+  classloader — the app APK's — which cannot see an entry that exists only in
+  the test APK. Both entries are merged into one services file in the app APK
+  instead; see the `packaging` block in `app/build.gradle.kts`.
+- **A host activity.** `createComposeRule` composes into a bare
+  `ComponentActivity` that `ui-test-manifest` contributes. The usual
+  `debugImplementation` is no help when the tests run against release, so it is
+  added to the release variant too — for a test invocation only, never for a
+  shipping APK.
 
 ---
 
@@ -608,7 +749,7 @@ receive an inset.
 | **0.2.0** ✅ | Full browse port: albums, artists, search, drill-downs, audio picker. |
 | **0.3.0** ✅ | Lyrics from tags, sidecars and — opt in — the network. Liked songs and editable playlists in Room. FFmpeg decoding, an AIFF reader, and a library that stops hiding what the media scanner could not parse. |
 | **0.4.0** ✅ | Folder browsing via SAF, reaching the files MediaStore never indexed. Demuxers for WavPack, APE and WMA, and the JNI entry point their decoders need — see [Audio formats](#audio-formats) for why a decoder alone is not enough. |
-| **0.5.0** ✅ | Four home screen widgets in Jetpack Glance, driven by the media session — including a lyric line that waits for the next word rather than polling for it. |
+| **0.5.0** ✅ | Four home screen widgets in Jetpack Glance, driven by the media session — including a lyric line that waits for the next word rather than polling for it, and previews in the picker that look like the widgets they are. A queue popup that lists what is actually coming, shuffle and repeat included. Lyrics set in one face throughout, and never overruled by the network. The first instrumented tests: the three hand-written migrations, run. |
 | 0.5.3 | The real UI: iPod-style hierarchy, paper-grain texture overlay, hand-sketched icon set. |
 | 0.5.5 | Tree-shaken FFmpeg build, targeting a 60–80% smaller binary. |
 | 0.6.0 | Stabilisation, accessibility, RTL. Peer-to-peer sharing over Bluetooth/Wi-Fi Direct using a `.chmf` bundle. |
