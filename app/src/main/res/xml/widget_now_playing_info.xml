@@ -2,6 +2,15 @@
 <!--
   SPDX-FileCopyrightText: 2026 AurielSolaris
   SPDX-License-Identifier: GPL-3.0-or-later
+
+  previewLayout is what the widget picker draws from API 31 on: this widget's
+  own shape, in Choir's paper and type, rather than the launcher icon repeated
+  four times with four different labels under it. previewImage stays for
+  Android 10 and 11, which have no previewLayout to read.
+
+  updatePeriodMillis is 0 and stays 0. Every redraw is provoked by something the
+  player did — see playback/WidgetPublisher — so a period would only wake the
+  device to redraw what had not changed.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_now_playing_description"
@@ -14,6 +23,7 @@
     android:maxResizeWidth="320dp"
     android:maxResizeHeight="200dp"
     android:resizeMode="horizontal|vertical"
+    android:previewLayout="@layout/widget_preview_now_playing"
     android:previewImage="@mipmap/ic_launcher"
     android:widgetCategory="home_screen"
     android:initialLayout="@layout/glance_default_loading_layout"

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The dark half of the widget preview palette. See values/colors.xml — a
+      widget follows the launcher's theme rather than the app's setting, so both
+      halves have to exist as resources.
+    -->
+    <color name="widget_background">#FF121212</color>
+    <color name="widget_on_background">#FFE0E0E0</color>
+    <color name="widget_muted">#FF888888</color>
+    <color name="widget_divider">#FF333333</color>
+</resources>

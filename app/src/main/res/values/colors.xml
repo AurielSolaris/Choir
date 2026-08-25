@@ -7,4 +7,18 @@
     <color name="paper">#FFF6F2E9</color>
     <color name="ink">#FF121212</color>
     <color name="ic_launcher_background">#FFF6F2E9</color>
+
+    <!--
+      The widget palette, for the *preview* layouts only.
+
+      The widgets themselves get these colours from ui/widget/WidgetTheme.kt,
+      which is the one place they are decided. A preview is plain RemoteViews
+      inflated by the launcher's picker with no Glance and no Kotlin anywhere
+      near it, so the same six values have to exist as resources too. Night
+      variants live in values-night/colors.xml.
+    -->
+    <color name="widget_background">#FFF6F2E9</color>
+    <color name="widget_on_background">#FF1A1A1A</color>
+    <color name="widget_muted">#FF6E6A63</color>
+    <color name="widget_divider">#FFDDD7CB</color>
 </resources>
